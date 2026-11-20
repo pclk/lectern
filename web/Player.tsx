@@ -123,6 +123,19 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
     if (startAt != null || focus) void video.current?.play().catch(() => {});
   };
 
+  // A later link into this same recording (another chip on the page, lectern:open) only changes ?t= / ?e=:
+  // the player stays mounted, so jump there here.
+  const navigatedTo = useRef({ startAt, example });
+  useEffect(() => {
+    if (navigatedTo.current.startAt === startAt && navigatedTo.current.example === example) return;
+    navigatedTo.current = { startAt, example };
+    if (!ready) return; // onLoaded reads the new props itself
+    const e = src.examples.find((x) => x.id === example) ?? null;
+    setFocus(e);
+    const target = startAt ?? e?.start;
+    if (target != null) { seek(target); void video.current?.play().catch(() => {}); }
+  }, [startAt, example, ready, src.examples, seek]);
+
   // Remember the position; mark watched near the end.
   useEffect(() => {
     if (!ready) return;
