@@ -12,18 +12,18 @@ within each run. `[x]` = shipped (commit in LOG.md). Effort: S < 20 min, M < 1 h
 - [x] `?t=abc` / `lectern:seek NaN` sets `currentTime = NaN` and breaks the player → accept finite numbers only. (QA 5)
 
 ## Run 2 (04:45): features 2 + 4, then
-- [ ] **Feature 2: next/previous recording** in watch order, plus optional autoplay of the next one at the end (keys `N`/`P`?; buttons by the title; "Up next" card at the end).
-- [ ] **Feature 4: mark watched/unwatched, reset progress**, per recording (player + module list) and per module. Also fixes "watched never clears": `resume.set` ORs `done` forever (QA 15).
-- [ ] Unmount doesn't save the position: `save()` reads `video.current` after React has cleared it → capture `v` in the effect. (QA 8)
-- [ ] Embed flag lost when navigating inside Lectern (Library links drop `embed=1`) → decide embed once (`embed=1` or `window.self !== window.top`) and keep it. (padSync 3)
-- [ ] `lectern:ready` posted to the parent once listeners are attached; `lectern:state` also on play/pause changes and on leaving the player (`null`); add a host-free `path` and `v: 1`. (padSync 2, 5 / QA 11)
-- [ ] **Loop example** (⟲ on the example banner, `r`). (student 1, S)
-- [ ] **"Say that again"** (`a`): back to the start of the current subtitle line at 1×, then resume speed. (student 2, S)
-- [ ] **Keyboard help overlay** on `?`, replacing the key list at the bottom of Edits. (student 3, S)
-- [ ] **"Explain this moment"** (`x` / 🤖): copy a Claude prompt with module, lecture, chapter, current example and ±60 s of transcript, plus the link. (student 4, S)
+- [x] **Feature 2: next/previous recording** in watch order, plus optional autoplay of the next one at the end (keys `N`/`P`?; buttons by the title; "Up next" card at the end).
+- [x] **Feature 4: mark watched/unwatched, reset progress**, per recording (player + module list) and per module. Also fixes "watched never clears": `resume.set` ORs `done` forever (QA 15).
+- [x] Unmount doesn't save the position: `save()` reads `video.current` after React has cleared it → capture `v` in the effect. (QA 8)
+- [x] Embed flag lost when navigating inside Lectern (Library links drop `embed=1`) → decide embed once (`embed=1` or `window.self !== window.top`) and keep it. (padSync 3)
+- [x] `lectern:ready` posted to the parent once listeners are attached; `lectern:state` also on play/pause changes and on leaving the player (`null`); add a host-free `path` and `v: 1`. (padSync 2, 5 / QA 11)
+- [x] **Loop example** (⟲ on the example banner, `r`). (student 1, S)
+- [x] **"Say that again"** (`a`): back to the start of the current subtitle line at 1×, then resume speed. (student 2, S)
+- [x] **Keyboard help overlay** on `?`, replacing the key list at the bottom of Edits. (student 3, S)
+- [x] **"Explain this moment"** (`x` / 🤖): copy a Claude prompt with module, lecture, chapter, current example and ±60 s of transcript, plus the link. (student 4, S)
 
 ## Run 3 (05:10): feature 3, then
-- [ ] **Feature 3: quality tiers** (`make_proxies.py --tier 360/540`, background generation under `nice -n 19 -j 1`, server `/media/<m>/<id>.mp4?q=540` or `media/<tier>/`, player selector remembered, fallback when a tier is missing).
+- [ ] **Feature 3: quality tiers** (started early in run 2: `make_proxies.py --tier H` done and the 540p encode is running in the background, log `~/Lectern/tier540.log`; server + player selector still to do) (`make_proxies.py --tier 360/540`, background generation under `nice -n 19 -j 1`, server `/media/<m>/<id>.mp4?q=540` or `media/<tier>/`, player selector remembered, fallback when a tier is missing).
 - [ ] Autoplay blocked in the padSync iframe/Safari fails silently → on `NotAllowedError` show "Tap to play · L04 10:03" with the banner. (padSync 9)
 - [ ] **Examples-only mode**: skip everything outside worked examples (`EditSettings.examplesOnly` in `skipRanges`), with tests. (student 5, M)
 - [ ] **Rate examples** ✓ Got it / ~ Shaky / ✗ Redo on the banner and the Examples rows; module page filter "Redo + Shaky". (student 6, M)
