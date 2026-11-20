@@ -37,6 +37,8 @@ function App() {
       if (d?.type === "lectern:open" && typeof d.url === "string" && d.url.startsWith("/")) navigate(d.url);
     };
     window.addEventListener("message", on);
+    // tells the host it can drive us now (until then, it should set the iframe's src instead)
+    if (window.parent !== window) window.parent.postMessage({ type: "lectern:ready", v: 1 }, "*");
     return () => window.removeEventListener("message", on);
   }, []);
   const url = new URL(loc, location.origin);

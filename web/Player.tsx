@@ -59,8 +59,10 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
   const go = useCallback((s: SourceSummary) => navigate(watchUrl(module, s.id)), [module]);
 
   // refs read by the frame loop, so it never restarts
-  const live = useRef({ tl, focus, stopAtEnd: prefs.stopAtExampleEnd });
-  live.current = { tl, focus, stopAtEnd: prefs.stopAtExampleEnd };
+  // "Say that again": replay the current subtitle line at 1×, back to normal speed after source time `again`.
+  const [again, setAgain] = useState<number | null>(null);
+  const live = useRef({ tl, focus, stopAtEnd: prefs.stopAtExampleEnd, loop: prefs.loopExample, again });
+  live.current = { tl, focus, stopAtEnd: prefs.stopAtExampleEnd, loop: prefs.loopExample, again };
 
   const flash = useCallback((msg: string) => { setToast(msg); window.setTimeout(() => setToast(""), 1600); }, []);
 
@@ -85,7 +87,7 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
   }, [local, updateLocal, flash, src, pauseSettings, prefs.edit, setPrefs]);
 
   useEffect(() => { document.title = `${src.label} ${src.title} · Lectern`; }, [src]);
-  useEffect(() => { const v = video.current; if (v) v.playbackRate = rate; }, [rate, ready]);
+  useEffect(() => { const v = video.current; if (v) v.playbackRate = again != null ? 1 : rate; }, [rate, ready, again]);
   useEffect(() => { const v = video.current; if (v) v.volume = prefs.volume; }, [prefs.volume, ready]);
 
   // Frame loop: jump over skipped stretches, stop at the end of a linked example, publish the clock. Browsers stop
@@ -95,7 +97,7 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
     const v = video.current!;
     let raf = 0, last = -1;
     const check = () => {
-      const { tl, focus, stopAtEnd } = live.current;
+      const { tl, focus, stopAtEnd, loop, again } = live.current;
       const ct = v.currentTime;
       if (!v.seeking && !v.paused) {
         const r = tl.skipAt(ct + 0.02);
@@ -105,7 +107,11 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
         }
         // the end may fall inside a skip, so compare with where playback resumes after it
         const end = focus ? tl.snap(focus.end) : 0;
-        if (focus && stopAtEnd && ct >= end && ct < end + 1.5 * Math.max(1, v.playbackRate)) { v.pause(); setFocus(null); }
+        if (focus && ct >= end && ct < end + 1.5 * Math.max(1, v.playbackRate)) {
+          if (loop) v.currentTime = tl.snap(focus.start);
+          else if (stopAtEnd) { v.pause(); setFocus(null); }
+        }
+        if (again != null && ct >= again) setAgain(null);
       }
       if (Math.abs(ct - last) >= 0.04) { last = ct; setT(ct); }
     };
@@ -186,13 +192,16 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
   const chapter = src.chapters[chapterIdx];
 
   // Embedded in padSync: report where we are, about once a second.
-  const lastPost = useRef(0);
+  // Also sent at once when play/pause changes; `lectern:idle` when the player closes. `path` is host-free.
+  const lastPost = useRef({ t: -10, playing: false });
   useEffect(() => {
-    if (!embed || window.parent === window || Math.abs(t - lastPost.current) < 1) return;
-    lastPost.current = t;
-    window.parent.postMessage({ type: "lectern:state", module, source: id, title: src.title, label: src.label, t,
-      chapter: chapter?.title ?? null, url: location.origin + watchUrl(module, id, t), playing }, "*");
+    if (!embed || window.parent === window) return;
+    if (Math.abs(t - lastPost.current.t) < 1 && playing === lastPost.current.playing) return;
+    lastPost.current = { t, playing };
+    window.parent.postMessage({ type: "lectern:state", v: 1, module, source: id, title: src.title, label: src.label, t,
+      chapter: chapter?.title ?? null, url: location.origin + watchUrl(module, id, t), path: watchUrl(module, id, t), playing }, "*");
   }, [embed, t, playing, module, id, src, chapter]);
+  useEffect(() => () => { if (embed && window.parent !== window) window.parent.postMessage({ type: "lectern:idle", v: 1 }, "*"); }, [embed]);
   useEffect(() => {
     const on = (e: MessageEvent) => {
       const d = e.data as { type?: string; t?: number } | null;
@@ -202,6 +211,35 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
     window.addEventListener("message", on);
     return () => window.removeEventListener("message", on);
   }, [seek, toggle]);
+
+  // "Say that again" (a): the current subtitle line (or the previous one, right after a line starts) at 1×.
+  const sayAgain = useCallback(() => {
+    const now = video.current?.currentTime ?? 0;
+    const i = atTime(lines, now);
+    if (i < 0) return;
+    const line = now - lines[i].start < 1 && i > 0 ? lines[i - 1] : lines[i];
+    setAgain(line.words[line.words.length - 1][1]);
+    seek(line.start);
+    void video.current?.play().catch(() => {});
+  }, [lines, seek]);
+
+  // "Explain this moment" (x): a ready-to-paste prompt with what was said around now.
+  const explain = useCallback(async () => {
+    const now = video.current?.currentTime ?? 0;
+    const said = src.words.filter((w) => w[0] >= now - 60 && w[0] <= now + 60).map((w) => w[2]).join(" ");
+    const ex = src.examples.find((e) => now >= e.start && now < e.end) ?? focus;
+    const ch = src.chapters[atTime(src.chapters, now + 0.5)];
+    const text = [
+      `I'm revising ${module} for my final exam and watching "${src.label} ${src.title}"${ch ? `, chapter "${ch.title}"` : ""}, at ${fmt(now)} in the recording.`,
+      ex ? `The lecturer is working through ${ex.ref ?? "an example"}: ${ex.label}${ex.summary ? ` (${ex.summary})` : ""}.` : "",
+      `Automatic transcript of about a minute either side (may contain recognition errors):\n"""${said}"""`,
+      "Explain what the lecturer is saying here, step by step, the way I'd need it in the exam, and point out common mistakes. Then give me one similar practice question, with the answer at the very end.",
+      `Link to this moment: ${location.origin + watchUrl(module, id, now)}`,
+    ].filter(Boolean).join("\n\n");
+    try { await navigator.clipboard.writeText(text); flash("Prompt copied: paste it into Claude"); } catch { flash("Couldn't copy the prompt"); }
+  }, [src, focus, module, id, flash]);
+
+  const [help, setHelp] = useState(false);
 
   const copyLink = useCallback(async () => {
     const url = location.origin + watchUrl(module, id, video.current?.currentTime ?? t);
@@ -238,7 +276,16 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
       else if (k === "n" && src.chapters[chapterIdx + 1]) seek(src.chapters[chapterIdx + 1].start);
       else if (k === "b" && chapter) seek(t - chapter.start > 3 || chapterIdx === 0 ? chapter.start : src.chapters[chapterIdx - 1].start);
       else if (k === "e") { const nx = src.examples.find((x) => x.start > t + 1); if (nx) playExample(nx); }
-      else if (k === "f") fullscreen();
+      else if (k === "f" && !embed) fullscreen();
+      else if (k === "a") sayAgain();
+      else if (k === "x") void explain();
+      else if (k === "r") {
+        if (!focus) { const ex = src.examples.find((x) => t >= x.start && t < x.end); if (ex) setFocus(ex); }
+        setPrefs({ loopExample: !prefs.loopExample });
+        flash(prefs.loopExample ? "Example loop off" : "Looping this example");
+      }
+      else if (k === "?") setHelp(!help);
+      else if (k === "Escape" && help) setHelp(false);
       else return;
       e.preventDefault();
     };
@@ -263,6 +310,7 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
 
   return (
     <div className={`player${embed ? " is-embed" : ""}`}>
+      {help && <KeyHelp close={() => setHelp(false)} />}
       {!embed && <Header crumbs={[{ href: `/m/${module}`, label: module }, { href: watchUrl(module, id), label: src.label }]} />}
       <div className="player-body">
         <section className="stage">
@@ -276,7 +324,10 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
             {focus && (
               <div className="example-banner">
                 <span><b>{focus.ref ?? "Example"}</b> {focus.label}</span>
-                <button onClick={() => setFocus(null)} title="Keep playing past the end of this example">×</button>
+                <span className="row">
+                  <button className={prefs.loopExample ? "on" : ""} onClick={() => setPrefs({ loopExample: !prefs.loopExample })} title="Loop this example (r)">⟲</button>
+                  <button onClick={() => setFocus(null)} title="Keep playing past the end of this example">×</button>
+                </span>
               </div>
             )}
             {toast && <div className="toast">{toast}</div>}
@@ -300,13 +351,36 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
             <button className={local.some((l) => t >= l.start && t < l.end) ? "on" : ""}
               onClick={() => tightenHere()} title="Still too slow here? Trim pauses harder in this chapter (t; shift+t undoes)">⏩ Tighten</button>
             <button className={watched ? "on" : ""} onClick={() => resume.mark([key], !watched)} title={watched ? "Watched: click to mark unwatched" : "Mark as watched"}>{watched ? "✓ Watched" : "○ Watched"}</button>
+            <button onClick={sayAgain} title="Say that again: replay this line at 1× (a)">↶ Again</button>
+            <button onClick={() => void explain()} title="Copy a prompt asking Claude to explain this moment (x)">🤖</button>
             <button onClick={copyLink} title="Copy a link to this moment (for your notes)">🔗</button>
+            <button onClick={() => setHelp(true)} title="Keyboard shortcuts (?)">?</button>
             {!embed && <button onClick={fullscreen} title="Fullscreen (f)">⛶</button>}
           </div>
         </section>
         <SidePanel src={src} tl={tl} t={t} prefs={prefs} setPrefs={setPrefs} seek={seek} playExample={playExample}
           focus={focus} chapterIdx={chapterIdx} keepCuts={keepCuts} setKeepCuts={setKeepCuts} rate={rate}
           pauses={pauses} local={local} setLocal={updateLocal} />
+      </div>
+    </div>
+  );
+}
+
+const KEYS: [string, string][] = [
+  ["space / k", "play / pause"], ["j / l", "back / forward 10 s"], ["← / →", "back / forward 5 s"],
+  ["a", "say that again: replay this line at 1×"], ["[ / ]", "slower / faster (switches to manual speed)"],
+  ["n / b", "next / previous chapter"], ["e", "next worked example"], ["r", "loop the current example"],
+  ["shift+N / shift+P", "next / previous recording"], ["c", "subtitles on/off"], ["s", "skip cuts on/off"],
+  ["p", "skip pauses on/off"], ["t / shift+T", "trim pauses harder in this chapter / undo"],
+  ["x", "copy an \"explain this moment\" prompt for Claude"], ["f", "fullscreen"], ["?", "this help"],
+];
+
+function KeyHelp({ close }: { close: () => void }) {
+  return (
+    <div className="modal-back" onClick={close}>
+      <div className="modal" role="dialog" aria-label="Keyboard shortcuts" onClick={(e) => e.stopPropagation()}>
+        <div className="row"><h2>Keyboard shortcuts</h2><span className="spacer" /><button className="link" onClick={close}>Close</button></div>
+        <dl className="keys">{KEYS.map(([k, d]) => <div key={k}><dt>{k}</dt><dd>{d}</dd></div>)}</dl>
       </div>
     </div>
   );
@@ -603,7 +677,7 @@ function Edits({ src, tl, prefs, setPrefs, keepCuts, setKeepCuts, seek, rate, pa
           </li>
         ))}
       </ul>
-      <p className="small muted">Keys: space play · j/l ±10 s · ←/→ ±5 s · [ ] speed · c captions · s cuts · p pauses · t/T tighten/undo pauses here · n/b chapters · shift+N/P next/previous recording · e next example · f fullscreen</p>
+      <p className="small muted">Press <b>?</b> for keyboard shortcuts.</p>
     </div>
   );
 }

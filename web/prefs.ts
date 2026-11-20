@@ -21,11 +21,13 @@ export interface Prefs {
   pauseMax: number | null;
   /** at the end of a recording, start the next one after a short countdown */
   autoNext: boolean;
+  /** replay a worked example from its start when it ends, instead of pausing */
+  loopExample: boolean;
 }
 
 export const DEFAULT_PREFS: Prefs = {
   edit: DEFAULT_EDIT, rateMode: "auto", targetWpm: 250, manualRate: 1.5, subtitles: true, karaoke: true,
-  subtitleSize: 1, panel: "chapters", stopAtExampleEnd: true, volume: 1, pauseMax: null, autoNext: true,
+  subtitleSize: 1, panel: "chapters", stopAtExampleEnd: true, volume: 1, pauseMax: null, autoNext: true, loopExample: false,
 };
 
 function read<T>(key: string, def: T): T {
