@@ -32,10 +32,10 @@ within each run. `[x]` = shipped (commit in LOG.md). Effort: S < 20 min, M < 1 h
 - [ ] Stretch: **progress stored on the Mac** (`GET/PUT /api/state` in `<library>/.lectern-state.json`) so the Mac, `mac.local` and the iPad share resume/watched/ratings. (student 9 / padSync 13, M)
 - [ ] Stretch: **`--https`** with a local cert (mkcert) so the iPad's https padSync can embed Lectern (mixed content blocks it today); `--lan` prints the Bonjour name and LAN IPs. (padSync 6, 7, M)
 
-## Run 4 (05:35): hardening
-- [ ] Skips and the example auto-stop stop in background tabs (rAF is paused, audio isn't) → also check on `timeupdate` / a timer to the next skip. (QA 1, high)
-- [ ] `history.replaceState` on every `t` change while paused/scrubbing → Safari SecurityError (~100 calls) → white screen. Debounce, try/catch. (QA 2, high)
-- [ ] "Pause when the example ends" missed when the end falls inside a skip, or at 3× with a throttled frame → detect crossing `tl.snap(focus.end)`. (QA 6)
+## Run 4 (05:35): hardening (the first three were done early in run 1)
+- [x] Skips and the example auto-stop stop in background tabs (rAF is paused, audio isn't) → also check on `timeupdate` / a timer to the next skip. (QA 1, high)
+- [x] `history.replaceState` on every `t` change while paused/scrubbing → Safari SecurityError (~100 calls) → white screen. Debounce, try/catch. (QA 2, high)
+- [x] "Pause when the example ends" missed when the end falls inside a skip, or at 3× with a throttled frame → detect crossing `tl.snap(focus.end)`. (QA 6)
 - [ ] Possible re-seek loop at a skip boundary when the browser lands just before `r[1]` → seek to `r[1] + 0.05` / remember last target. (QA 7)
 - [ ] Very short skips cost a seek each (audible glitch), worse at tight pause levels (0.2 / 0.12 s) → merge before filtering, minimum skip ~0.15–0.25 s, test on WebKit. (QA 19)
 - [ ] Missing video = black box with no message → `onError` state; show the play button when the video can't play yet. (QA 9)

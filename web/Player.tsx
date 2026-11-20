@@ -77,11 +77,13 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
   useEffect(() => { const v = video.current; if (v) v.playbackRate = rate; }, [rate, ready]);
   useEffect(() => { const v = video.current; if (v) v.volume = prefs.volume; }, [prefs.volume, ready]);
 
-  // Frame loop: jump over skipped stretches, stop at the end of a linked example, publish the clock.
+  // Frame loop: jump over skipped stretches, stop at the end of a linked example, publish the clock. Browsers stop
+  // animation frames in a background tab while the audio plays on, so `timeupdate` (still ~4/s there) runs the
+  // same check.
   useEffect(() => {
     const v = video.current!;
     let raf = 0, last = -1;
-    const tick = () => {
+    const check = () => {
       const { tl, focus, stopAtEnd } = live.current;
       const ct = v.currentTime;
       if (!v.seeking && !v.paused) {
@@ -90,13 +92,16 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
           if (r[1] >= tl.duration - 0.05) { v.pause(); v.currentTime = tl.duration; }
           else v.currentTime = r[1];
         }
-        if (focus && stopAtEnd && ct >= focus.end && ct < focus.end + 1.5) { v.pause(); setFocus(null); }
+        // the end may fall inside a skip, so compare with where playback resumes after it
+        const end = focus ? tl.snap(focus.end) : 0;
+        if (focus && stopAtEnd && ct >= end && ct < end + 1.5 * Math.max(1, v.playbackRate)) { v.pause(); setFocus(null); }
       }
       if (Math.abs(ct - last) >= 0.04) { last = ct; setT(ct); }
-      raf = requestAnimationFrame(tick);
     };
+    const tick = () => { check(); raf = requestAnimationFrame(tick); };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    v.addEventListener("timeupdate", check);
+    return () => { cancelAnimationFrame(raf); v.removeEventListener("timeupdate", check); };
   }, []);
 
   const seek = useCallback((source: number) => {
@@ -150,12 +155,18 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
   }, [ready, key, tl]);
 
   // Keep ?t= current while paused, so a reload or a copied address resumes here.
+  // Debounced: scrubbing changes t many times a second, and Safari throws after ~100 replaceState calls.
   useEffect(() => {
     if (playing || !ready) return;
-    const u = new URL(location.href);
-    u.searchParams.set("t", String(Math.floor(t)));
-    u.searchParams.delete("e");
-    history.replaceState(null, "", u.pathname + u.search);
+    const timer = window.setTimeout(() => {
+      try {
+        const u = new URL(location.href);
+        u.searchParams.set("t", String(Math.floor(t)));
+        u.searchParams.delete("e");
+        history.replaceState(null, "", u.pathname + u.search);
+      } catch { /* the address is a convenience */ }
+    }, 600);
+    return () => clearTimeout(timer);
   }, [playing, ready, t]);
 
   const chapterIdx = atTime(src.chapters, t + 0.5);
