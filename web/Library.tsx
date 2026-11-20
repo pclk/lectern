@@ -3,7 +3,7 @@ import { fmt } from "../shared/edl.ts";
 import type { ExampleHit, Module, SearchHit, SourceSummary } from "../shared/types.ts";
 import { api, useLoad, watchUrl } from "./api.ts";
 import { Link } from "./main.tsx";
-import { resume } from "./prefs.ts";
+import { resume, useResume } from "./prefs.ts";
 
 const KIND_LABEL: Record<string, string> = {
   "problem-set": "Problem set", tutorial: "Tutorial", quiz: "Quiz", midterm: "Midterm", "past-paper": "Past paper",
@@ -90,7 +90,7 @@ function EmptyLibrary() {
 }
 
 function ModuleCard({ m }: { m: Module }) {
-  const r = resume.all();
+  const r = useResume();
   const total = m.sources.reduce((a, s) => a + s.condensedMinutes, 0);
   const done = m.sources.filter((s) => r[`${m.code}/${s.id}`]?.done).length;
   const next = m.sources.find((s) => !r[`${m.code}/${s.id}`]?.done);
@@ -135,7 +135,7 @@ export function ModulePage({ code }: { code: string }) {
               <button className={tab === "lectures" ? "on" : ""} onClick={() => { setTab("lectures"); history.replaceState(null, "", "#"); }}>Recordings ({m.sources.length})</button>
               <button className={tab === "examples" ? "on" : ""} onClick={() => { setTab("examples"); history.replaceState(null, "", "#examples"); }}>Worked examples ({ex.data?.length ?? "…"})</button>
             </nav>
-            {tab === "lectures" ? <SourceList m={m} /> : <ExampleIndex hits={ex.data} />}
+            {tab === "lectures" ? <><ModuleActions m={m} /><SourceList m={m} /></> : <ExampleIndex hits={ex.data} />}
           </>
         )}
       </main>
@@ -143,14 +143,34 @@ export function ModulePage({ code }: { code: string }) {
   );
 }
 
+function ModuleActions({ m }: { m: Module }) {
+  const keys = m.sources.map((s) => `${m.code}/${s.id}`);
+  const r = useResume();
+  const done = keys.filter((k) => r[k]?.done).length;
+  return (
+    <div className="row module-actions">
+      <span className="muted small">{done}/{keys.length} watched</span>
+      <span className="spacer" />
+      <button className="btn" onClick={() => resume.mark(keys, true)} disabled={done === keys.length}>✓ Mark all watched</button>
+      <button className="btn" onClick={() => resume.mark(keys, false)} disabled={done === 0}>○ Mark all unwatched</button>
+      <button className="btn" onClick={() => { if (confirm(`Forget every position and watched mark in ${m.code}?`)) resume.reset(keys); }}>↺ Reset progress</button>
+    </div>
+  );
+}
+
 function SourceList({ m }: { m: Module }) {
-  const r = resume.all();
+  const r = useResume();
   return (
     <ol className="sources">
       {m.sources.map((s) => {
-        const at = r[`${m.code}/${s.id}`];
+        const k = `${m.code}/${s.id}`;
+        const at = r[k];
         return (
           <li key={s.id} className={at?.done ? "done" : ""}>
+            <span className="row-actions">
+              <button title={at?.done ? "Watched: mark unwatched" : "Mark watched"} className={at?.done ? "on" : ""} onClick={() => resume.mark([k], !at?.done)}>{at?.done ? "✓" : "○"}</button>
+              {at && <button title="Reset progress (forget position and watched mark)" onClick={() => resume.reset([k])}>↺</button>}
+            </span>
             <Link href={continueHref(m.code, s)}>
               <span className="label">{s.label}</span>
               <span className="title">{s.title}</span>

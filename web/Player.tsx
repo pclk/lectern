@@ -2,10 +2,11 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type PointerEv
 import { activeCuts, atTime, autoRate, DEFAULT_EDIT, fmt, keptWpm, skipRanges, Timeline } from "../shared/edl.ts";
 import { PAUSE_LEVELS, pauseLevelAt, pauseRanges, setLocal, tighter, type LocalPause, type PauseSettings } from "../shared/pauses.ts";
 import { buildLines, buildParagraphs, currentWord, type Line } from "../shared/subtitles.ts";
-import type { CutCategory, Example, Source } from "../shared/types.ts";
+import type { CutCategory, Example, Source, SourceSummary } from "../shared/types.ts";
 import { api, mediaUrl, useLoad, watchUrl } from "./api.ts";
+import { navigate } from "./main.tsx";
 import { Header } from "./Library.tsx";
-import { localPauses, usePrefs, resume, type Prefs } from "./prefs.ts";
+import { localPauses, usePrefs, resume, useResume, type Prefs } from "./prefs.ts";
 
 const CATEGORY_LABEL: Record<CutCategory, string> = {
   "dead-time": "Before/after lecture", break: "Breaks", admin: "Admin & logistics", technical: "Technical hiccups",
@@ -46,6 +47,16 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
   const [ready, setReady] = useState(false);
   const [toast, setToast] = useState("");
   const [focus, setFocus] = useState<Example | null>(() => src.examples.find((e) => e.id === example) ?? null);
+  const [ended, setEnded] = useState(false);
+  const watched = !!useResume()[key]?.done;
+
+  // Neighbours in watch order, for previous/next and "Up next".
+  const lib = useLoad(api.library, []);
+  const order = lib.data?.modules.find((m) => m.code === module)?.sources ?? [];
+  const idx = order.findIndex((s) => s.id === id);
+  const prev: SourceSummary | undefined = idx > 0 ? order[idx - 1] : undefined;
+  const next: SourceSummary | undefined = idx >= 0 ? order[idx + 1] : undefined;
+  const go = useCallback((s: SourceSummary) => navigate(watchUrl(module, s.id)), [module]);
 
   // refs read by the frame loop, so it never restarts
   const live = useRef({ tl, focus, stopAtEnd: prefs.stopAtExampleEnd });
@@ -89,7 +100,7 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
       if (!v.seeking && !v.paused) {
         const r = tl.skipAt(ct + 0.02);
         if (r) {
-          if (r[1] >= tl.duration - 0.05) { v.pause(); v.currentTime = tl.duration; }
+          if (r[1] >= tl.duration - 0.05) { v.pause(); v.currentTime = tl.duration; setEnded(true); }
           else v.currentTime = r[1];
         }
         // the end may fall inside a skip, so compare with where playback resumes after it
@@ -122,7 +133,9 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
   // Start position: ?t= / ?e= from a link, else where you left off.
   const onLoaded = () => {
     const at = resume.get(key);
-    const start = startAt ?? focus?.start ?? (at && !at.done ? at.t : 0);
+    // resume where you left off, unless that was the end (then it's a rewatch from the start)
+    const finished = at && tl.toVirtual(at.t) > tl.virtualDuration * 0.95;
+    const start = startAt ?? focus?.start ?? (at && !finished ? at.t : 0);
     seek(start);
     setReady(true);
     if (startAt != null || focus) void video.current?.play().catch(() => {});
@@ -144,10 +157,10 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
   // Remember the position; mark watched near the end.
   useEffect(() => {
     if (!ready) return;
+    const v = video.current; // React clears the ref before this effect's cleanup runs
     const save = () => {
-      const v = video.current;
-      if (!v) return;
-      resume.set(key, v.currentTime, tl.toVirtual(v.currentTime) > tl.virtualDuration * 0.95);
+      if (!v || !v.currentTime) return;
+      resume.set(key, v.currentTime, tl.toVirtual(v.currentTime) > tl.virtualDuration * 0.95 ? true : undefined);
     };
     const timer = window.setInterval(save, 5000);
     window.addEventListener("pagehide", save);
@@ -219,6 +232,8 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
       else if (k === "s") setPrefs({ edit: { ...prefs.edit, skipCuts: !prefs.edit.skipCuts } });
       else if (k === "p") setPrefs({ edit: { ...prefs.edit, skipPauses: !prefs.edit.skipPauses } });
       else if (k === "t") tightenHere();
+      else if (k === "N" && next) go(next);
+      else if (k === "P" && prev) go(prev);
       else if (k === "T") tightenHere(true);
       else if (k === "n" && src.chapters[chapterIdx + 1]) seek(src.chapters[chapterIdx + 1].start);
       else if (k === "b" && chapter) seek(t - chapter.start > 3 || chapterIdx === 0 ? chapter.start : src.chapters[chapterIdx - 1].start);
@@ -253,9 +268,11 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
         <section className="stage">
           <div className="video-box" ref={box} onDoubleClick={fullscreen}>
             <video ref={video} src={mediaUrl(module, id)} preload="auto" playsInline onClick={toggle}
-              onLoadedMetadata={onLoaded} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} />
+              onLoadedMetadata={onLoaded} onPlay={() => { setPlaying(true); setEnded(false); }} onPause={() => setPlaying(false)}
+              onEnded={() => setEnded(true)} onSeeking={(e) => { if (e.currentTarget.currentTime < src.duration - 0.5) setEnded(false); }} />
             {prefs.subtitles && <Subtitles lines={lines} t={t} karaoke={prefs.karaoke} size={prefs.subtitleSize} />}
-            {!playing && ready && <button className="big-play" onClick={toggle} aria-label="Play">▶</button>}
+            {!playing && ready && !ended && <button className="big-play" onClick={toggle} aria-label="Play">▶</button>}
+            {ended && <UpNext next={next} auto={prefs.autoNext} setAuto={(v) => setPrefs({ autoNext: v })} go={go} replay={() => { seek(0); void video.current?.play(); }} />}
             {focus && (
               <div className="example-banner">
                 <span><b>{focus.ref ?? "Example"}</b> {focus.label}</span>
@@ -269,6 +286,8 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
             <button onClick={toggle} className="play" aria-label={playing ? "Pause" : "Play"}>{playing ? "❚❚" : "▶"}</button>
             <button onClick={() => nudge(-10)} title="Back 10 s (j)">↺10</button>
             <button onClick={() => nudge(10)} title="Forward 10 s (l)">10↻</button>
+            <button onClick={() => prev && go(prev)} disabled={!prev} title={prev ? `Previous: ${prev.label} ${prev.title} (shift+P)` : "First recording"}>⇤</button>
+            <button onClick={() => next && go(next)} disabled={!next} title={next ? `Next: ${next.label} ${next.title} (shift+N)` : "Last recording"}>⇥</button>
             <span className="clock" title={`Recording time ${fmt(t)} / ${fmt(src.duration)}`}>
               {fmt(vNow)} / {fmt(tl.virtualDuration)} <span className="muted">· {fmt(remaining)} left</span>
             </span>
@@ -280,6 +299,7 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
             <button className={prefs.edit.skipPauses ? "on" : ""} onClick={() => setPrefs({ edit: { ...prefs.edit, skipPauses: !prefs.edit.skipPauses } })} title="Skip pauses (p)">⏭ Pauses</button>
             <button className={local.some((l) => t >= l.start && t < l.end) ? "on" : ""}
               onClick={() => tightenHere()} title="Still too slow here? Trim pauses harder in this chapter (t; shift+t undoes)">⏩ Tighten</button>
+            <button className={watched ? "on" : ""} onClick={() => resume.mark([key], !watched)} title={watched ? "Watched: click to mark unwatched" : "Mark as watched"}>{watched ? "✓ Watched" : "○ Watched"}</button>
             <button onClick={copyLink} title="Copy a link to this moment (for your notes)">🔗</button>
             {!embed && <button onClick={fullscreen} title="Fullscreen (f)">⛶</button>}
           </div>
@@ -288,6 +308,37 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
           focus={focus} chapterIdx={chapterIdx} keepCuts={keepCuts} setKeepCuts={setKeepCuts} rate={rate}
           pauses={pauses} local={local} setLocal={updateLocal} />
       </div>
+    </div>
+  );
+}
+
+/** End of a recording: what's next, with a countdown when autoplay is on. */
+function UpNext({ next, auto, setAuto, go, replay }: { next?: SourceSummary; auto: boolean; setAuto: (v: boolean) => void; go: (s: SourceSummary) => void; replay: () => void }) {
+  const [left, setLeft] = useState(8);
+  useEffect(() => {
+    if (!next || !auto) return;
+    if (left <= 0) { go(next); return; }
+    const timer = window.setTimeout(() => setLeft(left - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [next, auto, left, go]);
+  return (
+    <div className="up-next">
+      {next ? (
+        <>
+          <p className="muted small">Up next{auto ? ` in ${left} s` : ""}</p>
+          <p className="up-title"><b>{next.label}</b> {next.title}</p>
+          <div className="row">
+            <button className="btn primary" onClick={() => go(next)}>▶ Play now</button>
+            <button className="btn" onClick={replay}>↺ Replay</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="up-title">End of the module's last recording.</p>
+          <button className="btn" onClick={replay}>↺ Replay</button>
+        </>
+      )}
+      <label className="row small"><input type="checkbox" checked={auto} onChange={(e) => { setAuto(e.target.checked); setLeft(8); }} /> Autoplay the next recording</label>
     </div>
   );
 }
@@ -552,7 +603,7 @@ function Edits({ src, tl, prefs, setPrefs, keepCuts, setKeepCuts, seek, rate, pa
           </li>
         ))}
       </ul>
-      <p className="small muted">Keys: space play · j/l ±10 s · ←/→ ±5 s · [ ] speed · c captions · s cuts · p pauses · t/T tighten/undo pauses here · n/b chapters · e next example · f fullscreen</p>
+      <p className="small muted">Keys: space play · j/l ±10 s · ←/→ ±5 s · [ ] speed · c captions · s cuts · p pauses · t/T tighten/undo pauses here · n/b chapters · shift+N/P next/previous recording · e next example · f fullscreen</p>
     </div>
   );
 }

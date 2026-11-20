@@ -4,6 +4,10 @@ import { Home, ModulePage } from "./Library.tsx";
 import { Player } from "./Player.tsx";
 import "./styles.css";
 
+// Embedded (padSync's Lecture tab) is decided once: links inside Lectern don't carry ?embed=1, and a framed page
+// stays framed however it navigates.
+const EMBED = new URLSearchParams(location.search).get("embed") === "1" || window.self !== window.top;
+
 // Routes: /  ·  /m/<module>  ·  /watch/<module>/<source>?t=<sec>&e=<example>&embed=1
 export function navigate(href: string, replace = false) {
   if (replace) history.replaceState(null, "", href); else history.pushState(null, "", href);
@@ -37,7 +41,7 @@ function App() {
   }, []);
   const url = new URL(loc, location.origin);
   const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
-  const embed = url.searchParams.get("embed") === "1";
+  const embed = EMBED || url.searchParams.get("embed") === "1";
   useEffect(() => { document.documentElement.classList.toggle("embed", embed); }, [embed]);
 
   if (parts[0] === "watch" && parts.length === 3) {
