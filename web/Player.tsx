@@ -101,7 +101,7 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
 
   const seek = useCallback((source: number) => {
     const v = video.current;
-    if (!v) return;
+    if (!v || !Number.isFinite(source)) return;
     v.currentTime = live.current.tl.snap(Math.max(0, Math.min(source, src.duration)));
     setT(v.currentTime);
   }, [src.duration]);

@@ -7,6 +7,7 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { pipeline } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { LibraryStore } from "./library.ts";
 
@@ -52,12 +53,13 @@ function sendFile(req: http.IncomingMessage, res: http.ServerResponse, file: str
     }
     res.writeHead(206, { ...head, "content-range": `bytes ${start}-${end}/${stat.size}`, "content-length": end - start + 1 });
     if (req.method === "HEAD") return res.end();
-    fs.createReadStream(file, { start, end }).pipe(res);
+    // pipeline closes the file when the browser aborts a range request (it does on every seek)
+    pipeline(fs.createReadStream(file, { start, end }), res, () => {});
     return;
   }
   res.writeHead(200, { ...head, "content-length": stat.size });
   if (req.method === "HEAD") return res.end();
-  fs.createReadStream(file).pipe(res);
+  pipeline(fs.createReadStream(file), res, () => {});
 }
 
 const server = http.createServer((req, res) => {

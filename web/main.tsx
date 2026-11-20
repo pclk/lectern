@@ -43,7 +43,7 @@ function App() {
   if (parts[0] === "watch" && parts.length === 3) {
     const t = url.searchParams.get("t");
     return <Player key={`${parts[1]}/${parts[2]}`} module={parts[1]} id={parts[2]} embed={embed}
-      startAt={t != null ? Number(t) : undefined} example={url.searchParams.get("e") ?? undefined} />;
+      startAt={t != null && Number.isFinite(Number(t)) ? Number(t) : undefined} example={url.searchParams.get("e") ?? undefined} />;
   }
   if (parts[0] === "m" && parts[1]) return <ModulePage code={parts[1]} />;
   return <Home />;

@@ -7,7 +7,8 @@ import fs from "node:fs";
 import path from "node:path";
 import type { ExampleHit, Library, Module, SearchHit, Source } from "../shared/types.ts";
 
-const SAFE = /^[A-Za-z0-9._-]+$/;
+// A single path segment: no separators and no leading dot, so never "." or "..".
+const SAFE = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/;
 
 export class LibraryStore {
   readonly root: string;
@@ -28,7 +29,16 @@ export class LibraryStore {
     const dirs = this.moduleDirs();
     const stamp = dirs.map((d) => `${d}:${fs.statSync(path.join(this.root, d, "module.json")).mtimeMs}`).join("|");
     if (stamp !== this.stamp) {
-      this.modules = dirs.map((d) => JSON.parse(fs.readFileSync(path.join(this.root, d, "module.json"), "utf8")) as Module);
+      // one unreadable module.json must not take the whole library down
+      this.modules = dirs.flatMap((d) => {
+        try {
+          const m = JSON.parse(fs.readFileSync(path.join(this.root, d, "module.json"), "utf8")) as Module;
+          return [{ ...m, code: m.code ?? d, title: m.title ?? d, sources: m.sources ?? [], packs: m.packs ?? [] }];
+        } catch (e) {
+          console.error(`skipping ${d}/module.json: ${(e as Error).message}`);
+          return [];
+        }
+      });
       this.stamp = stamp;
     }
     return { modules: this.modules };
@@ -41,7 +51,14 @@ export class LibraryStore {
     const mtime = fs.statSync(file).mtimeMs;
     const hit = this.sources.get(file);
     if (hit && hit.mtime === mtime) return hit.src;
-    const src = JSON.parse(fs.readFileSync(file, "utf8")) as Source;
+    let src: Source;
+    try {
+      const raw = JSON.parse(fs.readFileSync(file, "utf8")) as Source;
+      src = { ...raw, words: raw.words ?? [], cuts: raw.cuts ?? [], pauses: raw.pauses ?? [], chapters: raw.chapters ?? [], examples: raw.examples ?? [] };
+    } catch (e) {
+      console.error(`unreadable ${module}/sources/${id}.json: ${(e as Error).message}`);
+      return null;
+    }
     this.sources.set(file, { mtime, src });
     return src;
   }
@@ -50,6 +67,7 @@ export class LibraryStore {
   file(module: string, kind: "media" | "packs", name: string): string | null {
     if (!SAFE.test(module) || !SAFE.test(name)) return null;
     const p = path.join(this.root, module, kind, name);
+    if (!p.startsWith(this.root + path.sep)) return null;
     return fs.existsSync(p) && fs.statSync(p).isFile() ? p : null;
   }
 
