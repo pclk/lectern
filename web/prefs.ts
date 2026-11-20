@@ -2,6 +2,7 @@
 // storage just means defaults every time.
 import { useCallback, useState } from "react";
 import { DEFAULT_EDIT, type EditSettings } from "../shared/edl.ts";
+import type { LocalPause } from "../shared/pauses.ts";
 
 export interface Prefs {
   edit: EditSettings;
@@ -16,11 +17,13 @@ export interface Prefs {
   /** pause when a worked example opened from a link finishes */
   stopAtExampleEnd: boolean;
   volume: number;
+  /** keep at most this many seconds of each pause between words; null = the pipeline's reviewed pauses */
+  pauseMax: number | null;
 }
 
 export const DEFAULT_PREFS: Prefs = {
   edit: DEFAULT_EDIT, rateMode: "auto", targetWpm: 250, manualRate: 1.5, subtitles: true, karaoke: true,
-  subtitleSize: 1, panel: "chapters", stopAtExampleEnd: true, volume: 1,
+  subtitleSize: 1, panel: "chapters", stopAtExampleEnd: true, volume: 1, pauseMax: null,
 };
 
 function read<T>(key: string, def: T): T {
@@ -57,5 +60,15 @@ export const resume = {
     const all = resume.all();
     all[key] = { t: Math.floor(t), at: Date.now(), done: done || all[key]?.done };
     write("lectern.resume", all);
+  },
+};
+
+/** "Tighten here" overrides, per recording ("<module>/<id>"). */
+export const localPauses = {
+  get: (key: string): LocalPause[] => read<Record<string, LocalPause[]>>("lectern.localPauses", {})[key] ?? [],
+  set(key: string, local: LocalPause[]) {
+    const all = read<Record<string, LocalPause[]>>("lectern.localPauses", {});
+    if (local.length) all[key] = local; else delete all[key];
+    write("lectern.localPauses", all);
   },
 };

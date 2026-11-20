@@ -1,10 +1,11 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
-import { activeCuts, atTime, autoRate, fmt, keptWpm, skipRanges, Timeline } from "../shared/edl.ts";
+import { activeCuts, atTime, autoRate, DEFAULT_EDIT, fmt, keptWpm, skipRanges, Timeline } from "../shared/edl.ts";
+import { PAUSE_LEVELS, pauseLevelAt, pauseRanges, setLocal, tighter, type LocalPause, type PauseSettings } from "../shared/pauses.ts";
 import { buildLines, buildParagraphs, currentWord, type Line } from "../shared/subtitles.ts";
 import type { CutCategory, Example, Source } from "../shared/types.ts";
 import { api, mediaUrl, useLoad, watchUrl } from "./api.ts";
 import { Header } from "./Library.tsx";
-import { usePrefs, resume, type Prefs } from "./prefs.ts";
+import { localPauses, usePrefs, resume, type Prefs } from "./prefs.ts";
 
 const CATEGORY_LABEL: Record<CutCategory, string> = {
   "dead-time": "Before/after lecture", break: "Breaks", admin: "Admin & logistics", technical: "Technical hiccups",
@@ -23,11 +24,19 @@ export function Player(p: Props) {
 
 function PlayerView({ module, id, embed, startAt, example, src }: Props & { src: Source }) {
   const [prefs, setPrefs] = usePrefs();
+  const key = `${module}/${id}`;
   const [keepCuts, setKeepCuts] = useState<number[]>([]);
+  const [local, setLocalState] = useState<LocalPause[]>(() => localPauses.get(key));
+  const updateLocal = useCallback((l: LocalPause[]) => { setLocalState(l); localPauses.set(key, l); }, [key]);
+  const pauseSettings = useMemo<PauseSettings>(() => ({ max: prefs.pauseMax, local }), [prefs.pauseMax, local]);
+  const pauses = useMemo(() => pauseRanges(src, pauseSettings), [src, pauseSettings]);
   const edit = useMemo(() => ({ ...prefs.edit, keepCuts }), [prefs.edit, keepCuts]);
-  const tl = useMemo(() => new Timeline(skipRanges(src, edit), src.duration), [src, edit]);
-  const rate = useMemo(() => prefs.rateMode === "auto" ? autoRate(src.words, tl, prefs.targetWpm) : prefs.manualRate,
-    [prefs.rateMode, prefs.targetWpm, prefs.manualRate, src.words, tl]);
+  const tl = useMemo(() => new Timeline(skipRanges(src, edit, pauses), src.duration), [src, edit, pauses]);
+  // Auto speed comes from the default edit, not the current one: trimming more pauses then shortens the lecture
+  // instead of being absorbed by a slower speed (the pipeline fixes its speed-up the same way).
+  const baseTl = useMemo(() => new Timeline(skipRanges(src, DEFAULT_EDIT), src.duration), [src]);
+  const rate = useMemo(() => prefs.rateMode === "auto" ? autoRate(src.words, baseTl, prefs.targetWpm) : prefs.manualRate,
+    [prefs.rateMode, prefs.targetWpm, prefs.manualRate, src.words, baseTl]);
   const lines = useMemo(() => buildLines(src.words), [src.words]);
 
   const video = useRef<HTMLVideoElement>(null);
@@ -37,13 +46,32 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
   const [ready, setReady] = useState(false);
   const [toast, setToast] = useState("");
   const [focus, setFocus] = useState<Example | null>(() => src.examples.find((e) => e.id === example) ?? null);
-  const key = `${module}/${id}`;
 
   // refs read by the frame loop, so it never restarts
   const live = useRef({ tl, focus, stopAtEnd: prefs.stopAtExampleEnd });
   live.current = { tl, focus, stopAtEnd: prefs.stopAtExampleEnd };
 
   const flash = useCallback((msg: string) => { setToast(msg); window.setTimeout(() => setToast(""), 1600); }, []);
+
+  // "Tighten here": trim pauses harder in the chapter being watched (or ±2 min without chapters); each press steps
+  // one level tighter. Loosen removes the override for this spot.
+  const tightenHere = useCallback((loosen = false) => {
+    const now = video.current?.currentTime ?? 0;
+    if (loosen) {
+      const left = local.filter((l) => !(now >= l.start && now < l.end));
+      updateLocal(left);
+      flash(left.length < local.length ? "Pauses here back to normal" : "No tightening here");
+      return;
+    }
+    const ci = src.indexed ? atTime(src.chapters, now + 0.5) : -1;
+    const [start, end, label] = ci >= 0
+      ? [src.chapters[ci].start, src.chapters[ci + 1]?.start ?? src.duration, src.chapters[ci].title]
+      : [Math.max(0, now - 120), Math.min(src.duration, now + 120), `around ${fmt(now)}`];
+    const max = tighter(pauseLevelAt(pauseSettings, now));
+    updateLocal(setLocal(local, { start, end, max, label }));
+    if (!prefs.edit.skipPauses) setPrefs({ edit: { ...prefs.edit, skipPauses: true } });
+    flash(`Pauses in “${label}” cut to ${max} s`);
+  }, [local, updateLocal, flash, src, pauseSettings, prefs.edit, setPrefs]);
 
   useEffect(() => { document.title = `${src.label} ${src.title} · Lectern`; }, [src]);
   useEffect(() => { const v = video.current; if (v) v.playbackRate = rate; }, [rate, ready]);
@@ -166,6 +194,8 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
       else if (k === "c") setPrefs({ subtitles: !prefs.subtitles });
       else if (k === "s") setPrefs({ edit: { ...prefs.edit, skipCuts: !prefs.edit.skipCuts } });
       else if (k === "p") setPrefs({ edit: { ...prefs.edit, skipPauses: !prefs.edit.skipPauses } });
+      else if (k === "t") tightenHere();
+      else if (k === "T") tightenHere(true);
       else if (k === "n" && src.chapters[chapterIdx + 1]) seek(src.chapters[chapterIdx + 1].start);
       else if (k === "b" && chapter) seek(t - chapter.start > 3 || chapterIdx === 0 ? chapter.start : src.chapters[chapterIdx - 1].start);
       else if (k === "e") { const nx = src.examples.find((x) => x.start > t + 1); if (nx) playExample(nx); }
@@ -224,12 +254,15 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
             <button className={prefs.subtitles ? "on" : ""} onClick={() => setPrefs({ subtitles: !prefs.subtitles })} title="Subtitles (c)">CC</button>
             <button className={prefs.edit.skipCuts ? "on" : ""} onClick={() => setPrefs({ edit: { ...prefs.edit, skipCuts: !prefs.edit.skipCuts } })} title="Skip cuts: off-topic, admin, breaks (s)">✂ Cuts</button>
             <button className={prefs.edit.skipPauses ? "on" : ""} onClick={() => setPrefs({ edit: { ...prefs.edit, skipPauses: !prefs.edit.skipPauses } })} title="Skip pauses (p)">⏭ Pauses</button>
+            <button className={local.some((l) => t >= l.start && t < l.end) ? "on" : ""}
+              onClick={() => tightenHere()} title="Still too slow here? Trim pauses harder in this chapter (t; shift+t undoes)">⏩ Tighten</button>
             <button onClick={copyLink} title="Copy a link to this moment (for your notes)">🔗</button>
             {!embed && <button onClick={fullscreen} title="Fullscreen (f)">⛶</button>}
           </div>
         </section>
         <SidePanel src={src} tl={tl} t={t} prefs={prefs} setPrefs={setPrefs} seek={seek} playExample={playExample}
-          focus={focus} chapterIdx={chapterIdx} keepCuts={keepCuts} setKeepCuts={setKeepCuts} rate={rate} />
+          focus={focus} chapterIdx={chapterIdx} keepCuts={keepCuts} setKeepCuts={setKeepCuts} rate={rate}
+          pauses={pauses} local={local} setLocal={updateLocal} />
       </div>
     </div>
   );
@@ -316,6 +349,7 @@ type PanelProps = {
   src: Source; tl: Timeline; t: number; prefs: Prefs; setPrefs: (p: Partial<Prefs>) => void; seek: (s: number) => void;
   playExample: (e: Example) => void; focus: Example | null; chapterIdx: number; keepCuts: number[];
   setKeepCuts: (k: number[]) => void; rate: number;
+  pauses: [number, number][]; local: LocalPause[]; setLocal: (l: LocalPause[]) => void;
 };
 
 function SidePanel(p: PanelProps) {
@@ -427,10 +461,11 @@ function Transcript({ src, t, seek }: { src: Source; t: number; seek: (s: number
   );
 }
 
-function Edits({ src, tl, prefs, setPrefs, keepCuts, setKeepCuts, seek, rate }: PanelProps) {
+function Edits({ src, tl, prefs, setPrefs, keepCuts, setKeepCuts, seek, rate, pauses, local, setLocal: updateLocal }: PanelProps) {
   const active = new Set(activeCuts(src.cuts, { ...prefs.edit, keepCuts }));
   const cats = [...new Set(src.cuts.map((c) => c.category))];
-  const pauseSec = src.pauses.reduce((a, [x, y]) => a + x - y, 0) * -1;
+  const pauseSec = pauses.reduce((a, [x, y]) => a + y - x, 0);
+  const level = (v: number | null) => v == null ? "reviewed" : String(v);
   const kept = keptWpm(src.words, tl);
   const setCat = (c: CutCategory, skip: boolean) => {
     const keep = prefs.edit.keepCategories.filter((x) => x !== c);
@@ -444,8 +479,29 @@ function Edits({ src, tl, prefs, setPrefs, keepCuts, setKeepCuts, seek, rate }: 
       </p>
       <label className="row">
         <input type="checkbox" checked={prefs.edit.skipPauses} onChange={(e) => setPrefs({ edit: { ...prefs.edit, skipPauses: e.target.checked } })} />
-        Skip pauses <span className="muted">({src.pauses.length} pauses, {fmt(pauseSec)})</span>
+        Skip pauses <span className="muted">({pauses.length} pauses, {fmt(pauseSec)})</span>
       </label>
+      {prefs.edit.skipPauses && (
+        <div className="cats">
+          <label className="row small">
+            Keep at most
+            <select value={level(prefs.pauseMax)} onChange={(e) => setPrefs({ pauseMax: e.target.value === "reviewed" ? null : Number(e.target.value) })}>
+              <option value="reviewed">reviewed pauses (default)</option>
+              {PAUSE_LEVELS.map((l) => <option key={l} value={l}>{l} s of each pause</option>)}
+            </select>
+          </label>
+          {local.map((l, i) => (
+            <div key={`${l.start}-${l.end}`} className="row small">
+              <button className="link" onClick={() => seek(l.start)} title="Go there">{l.label ?? `${fmt(l.start)}–${fmt(l.end)}`}</button>
+              <select value={l.max} onChange={(e) => updateLocal(local.map((x, j) => j === i ? { ...x, max: Number(e.target.value) } : x))}>
+                {PAUSE_LEVELS.map((v) => <option key={v} value={v}>{v} s</option>)}
+              </select>
+              <button className="link" onClick={() => updateLocal(local.filter((_, j) => j !== i))} title="Back to the global setting">×</button>
+            </div>
+          ))}
+          <p className="muted small">Still too slow somewhere? Press <b>t</b> or ⏩ Tighten while watching to trim pauses harder in that chapter (again for tighter, shift+t to undo). Remembered for this recording.</p>
+        </div>
+      )}
       <label className="row">
         <input type="checkbox" checked={prefs.edit.skipCuts} onChange={(e) => setPrefs({ edit: { ...prefs.edit, skipCuts: e.target.checked } })} />
         Skip cuts <span className="muted">({src.cuts.length} reviewed stretches)</span>
@@ -472,7 +528,7 @@ function Edits({ src, tl, prefs, setPrefs, keepCuts, setKeepCuts, seek, rate }: 
           </li>
         ))}
       </ul>
-      <p className="small muted">Keys: space play · j/l ±10 s · ←/→ ±5 s · [ ] speed · c captions · s cuts · p pauses · n/b chapters · e next example · f fullscreen</p>
+      <p className="small muted">Keys: space play · j/l ±10 s · ←/→ ±5 s · [ ] speed · c captions · s cuts · p pauses · t/T tighten/undo pauses here · n/b chapters · e next example · f fullscreen</p>
     </div>
   );
 }

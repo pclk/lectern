@@ -30,9 +30,10 @@ export function activeCuts(cuts: Cut[], s: EditSettings): Cut[] {
   return cuts.filter((c, i) => !s.keepCategories.includes(c.category) && !s.keepCuts.includes(i));
 }
 
-export function skipRanges(src: Pick<Source, "cuts" | "pauses" | "duration">, s: EditSettings): Range[] {
+/** `pauses` defaults to the pipeline's reviewed pauses; shared/pauses.ts derives others from a threshold. */
+export function skipRanges(src: Pick<Source, "cuts" | "pauses" | "duration">, s: EditSettings, pauses: Range[] = src.pauses): Range[] {
   const r: Range[] = activeCuts(src.cuts, s).map((c) => [c.start, c.end]);
-  if (s.skipPauses) r.push(...src.pauses.map(([a, b]): Range => [a, b]));
+  if (s.skipPauses) r.push(...pauses.map(([a, b]): Range => [a, b]));
   return mergeRanges(r.map(([a, b]): Range => [Math.max(0, a), Math.min(src.duration, b)]));
 }
 
