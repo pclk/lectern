@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import { fmt } from "../shared/edl.ts";
+import { exampleTitle, fmt } from "../shared/edl.ts";
 import type { ExampleHit, Module, SearchHit, SourceSummary } from "../shared/types.ts";
 import { api, useLoad, watchUrl } from "./api.ts";
 import { Link } from "./main.tsx";
@@ -235,7 +235,7 @@ function ExampleIndex({ hits }: { hits?: ExampleHit[] }) {
                 <span className="ref">{h.ref ?? KIND_LABEL[h.kind] ?? h.kind}</span>
                 {rated[`${h.module}/${h.source}/${h.id}`] && <span className={`badge r-${rated[`${h.module}/${h.source}/${h.id}`]}`}>{RATING_LABEL[rated[`${h.module}/${h.source}/${h.id}`]]}</span>}
               </span>
-              <span className="title">{h.label}</span>
+              <span className="title">{exampleTitle(h)}</span>
               {h.summary && <span className="summary">{h.summary}</span>}
               <span className="meta">{h.sourceLabel} · {fmt(h.start)} · {Math.max(1, Math.round((h.end - h.start) / 60))} min</span>
             </Link>

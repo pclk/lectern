@@ -150,3 +150,10 @@ export function atTime<T extends { start: number }>(items: T[], t: number): numb
   }
   return ans;
 }
+
+/** An example's label without its ref repeated in front ("Tutorial 2.17 — max-area…" → "max-area…"), for showing
+ * next to the ref. */
+export function exampleTitle(e: { ref: string | null; label: string }): string {
+  if (!e.ref || !e.label.startsWith(e.ref)) return e.label;
+  return e.label.slice(e.ref.length).replace(/^\s*[—–:-]\s*/, "").trim() || e.label;
+}

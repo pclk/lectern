@@ -74,3 +74,12 @@ test("outside and examples-only mode keep just the worked examples", async () =>
   // no examples indexed: nothing extra is skipped
   assert.deepEqual(skipRanges({ ...src, examples: [] }, s), [[12, 14]]);
 });
+
+test("exampleTitle drops a ref repeated at the start of the label", async () => {
+  const { exampleTitle } = await import("../shared/edl.ts");
+  assert.equal(exampleTitle({ ref: "Tutorial 2.17", label: "Tutorial 2.17 — max-area rectangle" }), "max-area rectangle");
+  assert.equal(exampleTitle({ ref: "L07 slides 28–29", label: "L07 slides 28–29 — Inner class B" }), "Inner class B");
+  assert.equal(exampleTitle({ ref: "Notes Ex 4.4.1", label: "Plane ⊥ 2i − 3k" }), "Plane ⊥ 2i − 3k");
+  assert.equal(exampleTitle({ ref: null, label: "Live demo" }), "Live demo");
+  assert.equal(exampleTitle({ ref: "Tutorial 2.1", label: "Tutorial 2.1" }), "Tutorial 2.1");
+});

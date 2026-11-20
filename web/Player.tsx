@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
-import { activeCuts, atTime, autoRate, DEFAULT_EDIT, fmt, keptWpm, skipRanges, Timeline } from "../shared/edl.ts";
+import { activeCuts, atTime, autoRate, DEFAULT_EDIT, exampleTitle, fmt, keptWpm, skipRanges, Timeline } from "../shared/edl.ts";
 import { PAUSE_LEVELS, pauseLevelAt, pauseRanges, setLocal, tighter, type LocalPause, type PauseSettings } from "../shared/pauses.ts";
 import { buildLines, buildParagraphs, currentWord, type Line } from "../shared/subtitles.ts";
 import type { CutCategory, Example, Source, SourceSummary } from "../shared/types.ts";
@@ -401,7 +401,7 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
             {ended && <UpNext next={next} auto={prefs.autoNext} setAuto={(v) => setPrefs({ autoNext: v })} go={go} replay={() => { seek(0); void video.current?.play(); }} />}
             {focus && (
               <div className="example-banner">
-                <span><b>{focus.ref ?? "Example"}</b> {focus.label}</span>
+                <span><b>{focus.ref ?? "Example"}</b> {exampleTitle(focus)}</span>
                 <span className="row">
                   <button className={prefs.loopExample ? "on" : ""} onClick={() => setPrefs({ loopExample: !prefs.loopExample })} title="Loop this example (r)">⟲</button>
                   <button onClick={() => setFocus(null)} title="Keep playing past the end of this example">×</button>
@@ -661,7 +661,7 @@ function Examples({ src, tl, t, playExample, focus, prefs, setPrefs }: PanelProp
               <button onClick={() => playExample(e)}>
                 <span className="time">{fmt(tl.toVirtual(e.start))}</span>
                 <span>
-                  {e.ref && <span className="ref">{e.ref}</span>} {e.label}
+                  {e.ref && <span className="ref">{e.ref}</span>} {exampleTitle(e)}
                   {e.summary && <span className="summary">{e.summary}</span>}
                 </span>
               </button>
