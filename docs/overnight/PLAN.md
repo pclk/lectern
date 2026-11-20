@@ -20,6 +20,8 @@ won't fit, stash it on a branch `wip/<name>` and note it in `LOG.md`.
   contract backward compatible. Don't edit padSync in these runs; if padSync needs a change, describe it in `LOG.md`.
 - Another scheduled build (the annotation pack, `/Users/weiheng/Notes/_annotation_build/`) runs at 04:30, 05:00 and
   05:30 and shares the usage limit. Don't touch its files. Keep agent fan-out modest (≤ 3 helpers at a time).
+- Background video encoding (quality tiers) must run under `nice -n 19` with `-j 1` until 06:00: the annotation build
+  rasterises thousands of pages before its 06:00 deadline and must not be slowed down.
 - Restart the server after changes: `pkill -f "node server/main.ts"; npm run build && (nohup node server/main.ts >/tmp/lectern.log 2>&1 &)`,
   then `curl -s localhost:4747/api/health`.
 - Browser checks: Playwright's Chromium is at `~/Library/Caches/ms-playwright/chromium-1255` (no H.264, so the video
