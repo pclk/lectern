@@ -5,6 +5,7 @@ import { buildLines, buildParagraphs, currentWord, type Line } from "../shared/s
 import type { CutCategory, Example, Source, SourceSummary } from "../shared/types.ts";
 import { api, mediaUrl, useLoad, watchUrl } from "./api.ts";
 import { navigate } from "./main.tsx";
+import { fromHost, tellHost } from "./host.ts";
 import { Header } from "./Library.tsx";
 import { localPauses, RATING_LABEL, ratings, usePrefs, resume, useRatings, useResume, type Prefs, type Rating } from "./prefs.ts";
 
@@ -59,6 +60,7 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
   const [ended, setEnded] = useState(false);
   // Safari (and a padSync iframe without a tap) refuses play() without a user gesture: say so instead of a silent ▶.
   const [blocked, setBlocked] = useState(false);
+  const [videoError, setVideoError] = useState("");
   const tryPlay = useCallback(() => {
     void video.current?.play().then(() => setBlocked(false), (e: Error) => { if (e.name === "NotAllowedError") setBlocked(true); });
   }, []);
@@ -103,7 +105,13 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
   }, [local, updateLocal, flash, src, pauseSettings, prefs.edit, setPrefs]);
 
   useEffect(() => { document.title = `${src.label} ${src.title} · Lectern`; }, [src]);
-  useEffect(() => { const v = video.current; if (v) v.playbackRate = again != null ? 1 : rate; }, [rate, ready, again]);
+  // defaultPlaybackRate too: iOS resets playbackRate to it when playback (re)starts
+  useEffect(() => {
+    const v = video.current;
+    if (!v) return;
+    v.defaultPlaybackRate = rate;
+    v.playbackRate = again != null ? 1 : rate;
+  }, [rate, ready, again]);
   useEffect(() => { const v = video.current; if (v) v.volume = prefs.volume; }, [prefs.volume, ready]);
 
   // Frame loop: jump over skipped stretches, stop at the end of a linked example, publish the clock. Browsers stop
@@ -111,7 +119,7 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
   // same check.
   useEffect(() => {
     const v = video.current!;
-    let raf = 0, last = -1;
+    let raf = 0, last = -1, target = -1;
     const check = () => {
       const { tl, focus, stopAtEnd, loop, again } = live.current;
       const ct = v.currentTime;
@@ -119,7 +127,8 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
         const r = tl.skipAt(ct + 0.02);
         if (r) {
           if (r[1] >= tl.duration - 0.05) { v.pause(); v.currentTime = tl.duration; setEnded(true); }
-          else v.currentTime = r[1];
+          // landed short of where we sent it (Safari rounds to frames)? push past instead of seeking there forever
+          else { v.currentTime = r[1] === target ? r[1] + 0.1 : r[1]; target = r[1]; }
         }
         // the end may fall inside a skip, so compare with where playback resumes after it
         const end = focus ? tl.snap(focus.end) : 0;
@@ -167,7 +176,8 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
     const start = startAt ?? focus?.start ?? (at && !finished ? at.t : 0);
     seek(start);
     setReady(true);
-    if (startAt != null || focus) tryPlay();
+    const own = (history.state as { lecternOwn?: boolean } | null)?.lecternOwn;
+    if ((startAt != null && !own) || focus) tryPlay();
   };
 
   // A later link into this same recording (another chip on the page, lectern:open) only changes ?t= / ?e=:
@@ -205,7 +215,7 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
         const u = new URL(location.href);
         u.searchParams.set("t", String(Math.floor(t)));
         u.searchParams.delete("e");
-        history.replaceState(null, "", u.pathname + u.search);
+        history.replaceState({ lecternOwn: true }, "", u.pathname + u.search); // a reload shouldn't autoplay
       } catch { /* the address is a convenience */ }
     }, 600);
     return () => clearTimeout(timer);
@@ -221,12 +231,13 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
     if (!embed || window.parent === window) return;
     if (Math.abs(t - lastPost.current.t) < 1 && playing === lastPost.current.playing) return;
     lastPost.current = { t, playing };
-    window.parent.postMessage({ type: "lectern:state", v: 1, module, source: id, title: src.title, label: src.label, t,
-      chapter: chapter?.title ?? null, url: location.origin + watchUrl(module, id, t), path: watchUrl(module, id, t), playing }, "*");
+    tellHost({ type: "lectern:state", module, source: id, title: src.title, label: src.label, t,
+      chapter: chapter?.title ?? null, url: location.origin + watchUrl(module, id, t), path: watchUrl(module, id, t), playing });
   }, [embed, t, playing, module, id, src, chapter]);
-  useEffect(() => () => { if (embed && window.parent !== window) window.parent.postMessage({ type: "lectern:idle", v: 1 }, "*"); }, [embed]);
+  useEffect(() => () => { if (embed) tellHost({ type: "lectern:idle" }); }, [embed]);
   useEffect(() => {
     const on = (e: MessageEvent) => {
+      if (!fromHost(e)) return;
       const d = e.data as { type?: string; t?: number } | null;
       if (d?.type === "lectern:seek" && typeof d.t === "number") seek(d.t);
       if (d?.type === "lectern:toggle") toggle();
@@ -279,15 +290,19 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
   };
 
   const fullscreen = () => {
+    const v = video.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
     if (document.fullscreenElement) void document.exitFullscreen();
-    else void box.current?.requestFullscreen?.().catch(() => {});
+    else if (box.current?.requestFullscreen) void box.current.requestFullscreen().catch(() => {});
+    else v?.webkitEnterFullscreen?.(); // iPhone: only the video element itself can go fullscreen
   };
 
   // Keyboard: space/k play · j/l ±10 s · ←/→ ±5 s · [ ] speed · c captions · s cuts · p pauses · n/b chapter · e next example · f fullscreen
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
-      if (e.metaKey || e.ctrlKey || e.altKey || el.closest("input, select, textarea")) return;
+      // typing in a text field is typing; a ticked checkbox or a clicked button shouldn't swallow the shortcuts
+      if (e.metaKey || e.ctrlKey || e.altKey || el.closest("input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea")) return;
+      if (el instanceof HTMLButtonElement || el instanceof HTMLInputElement) el.blur(); // else space would also click it
       const curRate = prefs.rateMode === "auto" ? rate : prefs.manualRate;
       const step = (d: number) => setPrefs({ rateMode: "manual", manualRate: Math.round(Math.min(3, Math.max(0.5, curRate + d)) * 100) / 100 });
       const k = e.key;
@@ -348,9 +363,14 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
       {!embed && <Header crumbs={[{ href: `/m/${module}`, label: module }, { href: watchUrl(module, id), label: src.label }]} />}
       <div className="player-body">
         <section className="stage">
-          <div className="video-box" ref={box} onDoubleClick={fullscreen}>
+          <div className="video-box" ref={box} onDoubleClick={embed ? undefined : fullscreen}>
             <video ref={video} src={mediaUrl(module, id, quality)} preload="auto" playsInline onClick={toggle}
               onLoadedMetadata={onLoaded} onPlay={() => { setPlaying(true); setEnded(false); }} onPause={() => setPlaying(false)}
+              onError={(e) => {
+                const err = e.currentTarget.error;
+                setVideoError(err?.code === 4 ? "The video file for this recording is missing or can't be played." : `The video stopped loading (${err?.message || "network error"}).`);
+              }}
+              onCanPlay={() => setVideoError("")}
               onEnded={() => setEnded(true)} onSeeking={(e) => { if (e.currentTarget.currentTime < src.duration - 0.5) setEnded(false); }} />
             {prefs.subtitles && <Subtitles lines={lines} t={t} karaoke={prefs.karaoke} size={prefs.subtitleSize} />}
             {((!playing && ready && !ended) || blocked) && (
@@ -375,6 +395,13 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
                   <button className={prefs.loopExample ? "on" : ""} onClick={() => setPrefs({ loopExample: !prefs.loopExample })} title="Loop this example (r)">⟲</button>
                   <button onClick={() => setFocus(null)} title="Keep playing past the end of this example">×</button>
                 </span>
+              </div>
+            )}
+            {videoError && (
+              <div className="video-error">
+                <p>{videoError}</p>
+                <p className="small">Transcript, chapters and examples still work. Is the Lectern server running, and was <code>make_proxies.py</code> run for {src.label}?</p>
+                <button className="btn" onClick={() => { setVideoError(""); video.current?.load(); }}>Try again</button>
               </div>
             )}
             {toast && <div className="toast">{toast}</div>}
@@ -511,6 +538,8 @@ function SeekBar({ src, tl, t, onSeek }: { src: Source; tl: Timeline; t: number;
       onPointerDown={(e) => { dragging.current = true; e.currentTarget.setPointerCapture(e.pointerId); onSeek(tl.toSource(at(e).v)); }}
       onPointerMove={(e) => { const h = at(e); setHover(h); if (dragging.current) onSeek(tl.toSource(h.v)); }}
       onPointerUp={() => { dragging.current = false; }}
+      onPointerCancel={() => { dragging.current = false; }}
+      onLostPointerCapture={() => { dragging.current = false; }}
       onPointerLeave={() => setHover(null)}>
       <div className="track">
         {src.examples.map((e) => (
@@ -659,7 +688,10 @@ function Transcript({ src, t, seek }: { src: Source; t: number; seek: (s: number
   const active = paras[i] && t <= paras[i].end + 2.5 ? i : -1;
   const w = active >= 0 ? currentWord(paras[active], t) : -1;
   const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
-  const shown = terms.length ? paras.filter((p) => { const s = p.words.map((x) => x[2]).join(" ").toLowerCase(); return terms.every((x) => s.includes(x)); }) : paras;
+  const texts = useMemo(() => paras.map((p) => p.words.map((x) => x[2]).join(" ").toLowerCase()), [paras]);
+  const shown = useMemo(() => terms.length ? paras.filter((_, i) => terms.every((x) => texts[i].includes(x))) : paras,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [paras, texts, q]);
   useEffect(() => {
     if (!follow || terms.length || active < 0) return;
     box.current?.querySelector("p.on")?.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -683,7 +715,7 @@ function Edits({ src, tl, prefs, setPrefs, keepCuts, setKeepCuts, seek, rate, pa
   const cats = [...new Set(src.cuts.map((c) => c.category))];
   const pauseSec = pauses.reduce((a, [x, y]) => a + y - x, 0);
   const level = (v: number | null) => v == null ? "reviewed" : String(v);
-  const kept = keptWpm(src.words, tl);
+  const kept = useMemo(() => keptWpm(src.words, tl), [src.words, tl]);
   const setCat = (c: CutCategory, skip: boolean) => {
     const keep = prefs.edit.keepCategories.filter((x) => x !== c);
     setPrefs({ edit: { ...prefs.edit, keepCategories: skip ? keep : [...keep, c] } });

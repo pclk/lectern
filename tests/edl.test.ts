@@ -10,6 +10,18 @@ test("mergeRanges sorts, merges overlaps and drops slivers", () => {
   assert.deepEqual(mergeRanges([[5, 6], [1, 3], [2, 4], [8, 8.01]]), [[1, 4], [5, 6]]);
 });
 
+test("mergeRanges merges before dropping slivers, and joins near-adjacent ranges", () => {
+  // a 0.01 s range bridging two others must still join them
+  assert.deepEqual(mergeRanges([[10, 20], [20, 20.01], [20.01, 30]]), [[10, 30]]);
+  assert.deepEqual(mergeRanges([[0, 1], [1.1, 2], [3, 4]], 0.02, 0.15), [[0, 2], [3, 4]]);
+  assert.deepEqual(mergeRanges([[0, 1], [1.2, 2]], 0.02, 0.15), [[0, 1], [1.2, 2]]);
+});
+
+test("skipRanges joins skips separated by a sliver of kept time", () => {
+  const src = { duration: 100, cuts: [cut(10, 20)], pauses: [[20.1, 21]] as [number, number][] };
+  assert.deepEqual(skipRanges(src, { skipCuts: true, keepCategories: [], keepCuts: [], skipPauses: true }), [[10, 21]]);
+});
+
 test("skipRanges honours toggles, kept categories and kept cuts", () => {
   const src = { duration: 100, cuts: [cut(10, 20), cut(50, 60, "admin")], pauses: [[30, 31], [70, 72]] as [number, number][] };
   const base = { skipCuts: true, keepCategories: [], keepCuts: [], skipPauses: true };

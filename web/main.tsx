@@ -1,9 +1,10 @@
-import { StrictMode, useEffect, useState, type MouseEvent, type ReactNode } from "react";
+import { Component, StrictMode, useEffect, useState, type ErrorInfo, type MouseEvent, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { Home, ModulePage } from "./Library.tsx";
 import { Player } from "./Player.tsx";
 import "./styles.css";
 import { startSync } from "./sync.ts";
+import { fromHost, tellHost } from "./host.ts";
 
 // Embedded (padSync's Lecture tab) is decided once: links inside Lectern don't carry ?embed=1, and a framed page
 // stays framed however it navigates.
@@ -34,12 +35,13 @@ function App() {
   // a host page (padSync's lecture panel) can drive the player: {type: "lectern:open", url: "/watch/..."}
   useEffect(() => {
     const on = (e: MessageEvent) => {
+      if (!fromHost(e)) return;
       const d = e.data as { type?: string; url?: string } | null;
       if (d?.type === "lectern:open" && typeof d.url === "string" && d.url.startsWith("/")) navigate(d.url);
     };
     window.addEventListener("message", on);
     // tells the host it can drive us now (until then, it should set the iframe's src instead)
-    if (window.parent !== window) window.parent.postMessage({ type: "lectern:ready", v: 1 }, "*");
+    tellHost({ type: "lectern:ready" });
     return () => window.removeEventListener("message", on);
   }, []);
   const url = new URL(loc, location.origin);
@@ -57,4 +59,21 @@ function App() {
 }
 
 startSync();
-createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);
+/** A crash in one page shouldn't leave a blank screen: say so, and offer the way back. */
+class Boundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error, info: ErrorInfo) { console.error(error, info.componentStack); }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="wrap">
+        <h1>Something went wrong</h1>
+        <p className="error">{String(this.state.error.message)}</p>
+        <p><button className="btn" onClick={() => location.reload()}>Reload</button> <a className="btn" href="/">Library</a></p>
+      </div>
+    );
+  }
+}
+
+createRoot(document.getElementById("root")!).render(<StrictMode><Boundary><App /></Boundary></StrictMode>);

@@ -12,7 +12,8 @@ test("gapPauses trims gaps, lead-in and tail down to max, split 60/40 around the
   const r = gapPauses(words, 10, 0.5);
   assert.ok(near(r, [[0, 0.8], [3.3, 4.8], [7.3, 10]]), JSON.stringify(r));
   // gaps of 0.1 s and 0.05 s are under the threshold; nothing below MIN_SKIP is emitted
-  assert.ok(near(gapPauses(words, 10, 1.9), [[0, 0.24], [4.14, 4.24], [8.14, 10]]), JSON.stringify(gapPauses(words, 10, 1.9)));
+  // the 2 s gap trimmed to 1.9 s would be a 0.1 s skip: below MIN_SKIP, so not worth a seek
+  assert.ok(near(gapPauses(words, 10, 1.9), [[0, 0.24], [8.14, 10]]), JSON.stringify(gapPauses(words, 10, 1.9)));
 });
 
 test("gapPauses clips to a window", () => {

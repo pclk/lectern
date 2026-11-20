@@ -16,15 +16,20 @@ export interface EditSettings {
 
 export const DEFAULT_EDIT: EditSettings = { skipCuts: true, keepCategories: [], keepCuts: [], skipPauses: true };
 
-export function mergeRanges(ranges: Range[], minLen = 0.02): Range[] {
-  const sorted = ranges.filter(([a, b]) => b - a >= minLen).sort((x, y) => x[0] - y[0]);
+/**
+ * Sort and merge, joining ranges less than `joinGap` apart (a sliver of kept time between two skips is a second
+ * seek for nothing), then drop what's still shorter than `minLen`. Merging first means a tiny range that bridges
+ * two others still joins them.
+ */
+export function mergeRanges(ranges: Range[], minLen = 0.02, joinGap = 0): Range[] {
+  const sorted = ranges.filter(([a, b]) => b > a).map(([a, b]): Range => [a, b]).sort((x, y) => x[0] - y[0]);
   const out: Range[] = [];
   for (const [a, b] of sorted) {
     const last = out[out.length - 1];
-    if (last && a <= last[1] + 1e-6) last[1] = Math.max(last[1], b);
+    if (last && a <= last[1] + joinGap + 1e-6) last[1] = Math.max(last[1], b);
     else out.push([a, b]);
   }
-  return out;
+  return out.filter(([a, b]) => b - a >= minLen);
 }
 
 export function activeCuts(cuts: Cut[], s: EditSettings): Cut[] {
@@ -38,7 +43,8 @@ export function skipRanges(src: Pick<Source, "cuts" | "pauses" | "duration"> & {
   const r: Range[] = activeCuts(src.cuts, s).map((c) => [c.start, c.end]);
   if (s.examplesOnly && src.examples?.length) r.push(...outside(src.examples.map((e): Range => [e.start, e.end]), src.duration));
   if (s.skipPauses) r.push(...pauses.map(([a, b]): Range => [a, b]));
-  return mergeRanges(r.map(([a, b]): Range => [Math.max(0, a), Math.min(src.duration, b)]));
+  // every skip is a seek: don't keep a sliver shorter than 0.15 s between two of them
+  return mergeRanges(r.map(([a, b]): Range => [Math.max(0, a), Math.min(src.duration, b)]), 0.02, 0.15);
 }
 
 /** The parts of [0, duration) not covered by `ranges`. */

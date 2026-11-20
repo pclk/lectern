@@ -8,8 +8,8 @@ import type { Range, Word } from "./types.ts";
 export const PAUSE_LEVELS = [2, 1.5, 1, 0.75, 0.5, 0.4, 0.3, 0.2, 0.12];
 /** What the pipeline's reviewed pauses come to (measured: kept time matches the 0.3 s level), for stepping from the default. */
 export const REVIEWED_LEVEL = 0.3;
-/** Gaps trimmed by less than this aren't worth a seek. */
-const MIN_SKIP = 0.08;
+/** Gaps trimmed by less than this aren't worth a seek (each one is a small audible jump). */
+const MIN_SKIP = 0.15;
 
 export interface LocalPause {
   start: number;
