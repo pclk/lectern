@@ -23,14 +23,14 @@ within each run. `[x]` = shipped (commit in LOG.md). Effort: S < 20 min, M < 1 h
 - [x] **"Explain this moment"** (`x` / 🤖): copy a Claude prompt with module, lecture, chapter, current example and ±60 s of transcript, plus the link. (student 4, S)
 
 ## Run 3 (05:10): feature 3, then
-- [ ] **Feature 3: quality tiers** (started early in run 2: `make_proxies.py --tier H` done and the 540p encode is running in the background, log `~/Lectern/tier540.log`; server + player selector still to do) (`make_proxies.py --tier 360/540`, background generation under `nice -n 19 -j 1`, server `/media/<m>/<id>.mp4?q=540` or `media/<tier>/`, player selector remembered, fallback when a tier is missing).
-- [ ] Autoplay blocked in the padSync iframe/Safari fails silently → on `NotAllowedError` show "Tap to play · L04 10:03" with the banner. (padSync 9)
-- [ ] **Examples-only mode**: skip everything outside worked examples (`EditSettings.examplesOnly` in `skipRanges`), with tests. (student 5, M)
-- [ ] **Rate examples** ✓ Got it / ~ Shaky / ✗ Redo on the banner and the Examples rows; module page filter "Redo + Shaky". (student 6, M)
-- [ ] **Time left per module** at your speed on module cards. (student 8, S)
-- [ ] **Picture-in-picture** (`i`). (student 12, S)
-- [ ] Stretch: **progress stored on the Mac** (`GET/PUT /api/state` in `<library>/.lectern-state.json`) so the Mac, `mac.local` and the iPad share resume/watched/ratings. (student 9 / padSync 13, M)
-- [ ] Stretch: **`--https`** with a local cert (mkcert) so the iPad's https padSync can embed Lectern (mixed content blocks it today); `--lan` prints the Bonjour name and LAN IPs. (padSync 6, 7, M)
+- [x] **Feature 3: quality tiers** (script in run 2, server + player in run 3; 540p encode running in the background, log `~/Lectern/tier540.log`) (`make_proxies.py --tier 360/540`, background generation under `nice -n 19 -j 1`, server `/media/<m>/<id>.mp4?q=540` or `media/<tier>/`, player selector remembered, fallback when a tier is missing).
+- [x] Autoplay blocked in the padSync iframe/Safari fails silently → on `NotAllowedError` show "Tap to play · L04 10:03" with the banner. (padSync 9)
+- [x] **Examples-only mode**: skip everything outside worked examples (`EditSettings.examplesOnly` in `skipRanges`), with tests. (student 5, M)
+- [x] **Rate examples** ✓ Got it / ~ Shaky / ✗ Redo on the banner and the Examples rows; module page filter "Redo + Shaky". (student 6, M)
+- [x] **Time left per module** at your speed on module cards. (student 8, S)
+- [x] **Picture-in-picture** (`i`). (student 12, S)
+- [x] Stretch: **progress stored on the Mac** (`GET/PUT /api/state` in `<library>/.lectern-state.json`) so the Mac, `mac.local` and the iPad share resume/watched/ratings. (student 9 / padSync 13, M)
+- [x] Stretch: **`--https`** with a local cert (mkcert) so the iPad's https padSync can embed Lectern (mixed content blocks it today); `--lan` prints the Bonjour name and LAN IPs. (padSync 6, 7, M)
 
 ## Run 4 (05:35): hardening (the first three were done early in run 1)
 - [x] Skips and the example auto-stop stop in background tabs (rAF is paused, audio isn't) → also check on `timeupdate` / a timer to the next skip. (QA 1, high)
