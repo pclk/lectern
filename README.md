@@ -22,6 +22,26 @@ npm test
 
 Options: `--port 4747`, `--library ~/Lectern/library` (or `LECTERN_PORT` / `LECTERN_LIBRARY`).
 
+## iPad (padSync's Lecture tab)
+
+padSync is served over https, and browsers block an http page inside an https one (except `localhost` on the same
+machine). So on an iPad, Lectern has to be served over https with a certificate the iPad trusts. This is a one-time setup:
+
+```bash
+brew install mkcert && mkcert -install                      # a local certificate authority for this Mac
+mkdir -p ~/Lectern/certs && cd ~/Lectern/certs
+mkcert -cert-file lectern.pem -key-file lectern-key.pem "$(scutil --get LocalHostName).local" localhost 127.0.0.1
+open "$(mkcert -CAROOT)"                                     # AirDrop rootCA.pem to the iPad
+```
+
+On the iPad, install the profile (Settings → General → VPN & Device Management), then turn on full trust for it
+(Settings → General → About → Certificate Trust Settings). Then start `npm run start:lan:https` and set padSync's
+Lectern address (Settings → Notebook) to the `https://<name>.local:4747` it prints. Alternative with no certificates
+on the iPad: `tailscale serve` gives the Mac a real https address on your tailnet.
+
+Progress (positions, watched marks, ratings, pause overrides) is kept on the Mac in `<library>/.lectern-state.json`,
+so the Mac, the iPad and padSync's embedded player all share it.
+
 ## The Claude skill
 
 `skill/lecture-exam-prep/` is the Claude Code skill that builds Lectern's library from a course folder (Phase 6 of its

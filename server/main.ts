@@ -2,9 +2,15 @@
 // Videos never leave the machine. By default it listens on 127.0.0.1 only; --lan also listens on the local
 // network so an iPad can open links (http://<mac-name>.local:4747/...) next to padSync in Split View.
 //
-//   node server/main.ts [--port 4747] [--library ~/Lectern/library] [--lan]
+//   node server/main.ts [--port 4747] [--library ~/Lectern/library] [--lan] [--https [--cert f.pem --key f-key.pem]]
+//
+// --https serves over TLS so padSync (an https page) may embed it from an iPad: browsers block an http iframe in an
+// https page ("mixed content"), except for localhost on the same machine. Make a certificate the iPad trusts with
+// mkcert (see README): defaults are ~/Lectern/certs/lectern.pem and lectern-key.pem.
 import fs from "node:fs";
+import { execFileSync } from "node:child_process";
 import http from "node:http";
+import https from "node:https";
 import os from "node:os";
 import path from "node:path";
 import { pipeline } from "node:stream";
@@ -19,6 +25,9 @@ const opt = (name: string, def: string) => {
 const PORT = Number(opt("port", process.env.LECTERN_PORT ?? "4747"));
 const LIBRARY = opt("library", process.env.LECTERN_LIBRARY ?? path.join(os.homedir(), "Lectern", "library")).replace(/^~(?=\/)/, os.homedir());
 const LAN = args.includes("--lan") || process.env.LECTERN_LAN === "1";
+const HTTPS = args.includes("--https") || process.env.LECTERN_HTTPS === "1";
+const CERT = opt("cert", path.join(os.homedir(), "Lectern", "certs", "lectern.pem")).replace(/^~(?=\/)/, os.homedir());
+const KEY = opt("key", path.join(os.homedir(), "Lectern", "certs", "lectern-key.pem")).replace(/^~(?=\/)/, os.homedir());
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DIST = path.join(ROOT, "dist");
 
@@ -62,7 +71,7 @@ function sendFile(req: http.IncomingMessage, res: http.ServerResponse, file: str
   pipeline(fs.createReadStream(file), res, () => {});
 }
 
-const server = http.createServer((req, res) => {
+const handler = (req: http.IncomingMessage, res: http.ServerResponse) => {
   try {
     const url = new URL(req.url ?? "/", "http://x");
     const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
@@ -108,13 +117,25 @@ const server = http.createServer((req, res) => {
   } catch (e) {
     if (!res.headersSent) json(res, 500, { error: String(e) });
   }
-});
+};
+
+if (HTTPS && !(fs.existsSync(CERT) && fs.existsSync(KEY))) {
+  console.error(`--https needs a certificate: ${CERT} and ${KEY} not found (see README: "iPad").`);
+  process.exit(1);
+}
+const server = HTTPS ? https.createServer({ cert: fs.readFileSync(CERT), key: fs.readFileSync(KEY) }, handler) : http.createServer(handler);
+
+/** The Mac's Bonjour name (what an iPad can resolve), else the host name. */
+function bonjourName() {
+  try { return execFileSync("scutil", ["--get", "LocalHostName"], { encoding: "utf8" }).trim(); } catch { return os.hostname().replace(/\.local$/, ""); }
+}
 
 server.listen(PORT, LAN ? "0.0.0.0" : "127.0.0.1", () => {
-  const lib = store.library();
-  console.log(`Lectern → http://localhost:${PORT}  (library: ${store.root}, ${lib.modules.length} modules)`);
+  const scheme = HTTPS ? "https" : "http";
+  console.log(`Lectern → ${scheme}://localhost:${PORT}  (library: ${store.root}, ${store.library().modules.length} modules)`);
   if (LAN) {
-    const host = os.hostname().replace(/\.local$/, "");
-    console.log(`  on your network: http://${host}.local:${PORT}  — set this as padSync's Lectern address on the iPad`);
+    const ips = Object.values(os.networkInterfaces()).flat().filter((i) => i && i.family === "IPv4" && !i.internal).map((i) => i!.address);
+    console.log(`  on your network: ${scheme}://${bonjourName()}.local:${PORT}${ips.length ? `  (or ${ips.map((ip) => `${scheme}://${ip}:${PORT}`).join(", ")})` : ""}`);
+    console.log(`  set this as padSync's Lectern address on the iPad${HTTPS ? "" : "; padSync's https page can only embed it with --https"}`);
   }
 });
