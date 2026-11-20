@@ -115,4 +115,28 @@ export class LibraryStore {
     return m.sources.flatMap((s) => (this.source(m.code, s.id)?.examples ?? []).map((e) => (
       { ...e, module: m.code, source: s.id, sourceTitle: s.title, sourceLabel: s.label })));
   }
+
+  /** Progress shared by every browser and device (web/sync.ts): {store: {key: {v, at}}}, newer `at` wins. */
+  private statePath() { return path.join(this.root, ".lectern-state.json"); }
+
+  state(): SyncState {
+    try { return JSON.parse(fs.readFileSync(this.statePath(), "utf8")) as SyncState; } catch { return {}; }
+  }
+
+  mergeState(patch: SyncState): SyncState {
+    const cur = this.state();
+    for (const [store, entries] of Object.entries(patch)) {
+      if (!SAFE.test(store) || typeof entries !== "object" || !entries) continue;
+      const into = (cur[store] ??= {});
+      for (const [k, e] of Object.entries(entries)) {
+        if (typeof e?.at === "number" && e.at > (into[k]?.at ?? 0)) into[k] = { v: e.v ?? null, at: e.at };
+      }
+    }
+    const tmp = this.statePath() + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(cur));
+    fs.renameSync(tmp, this.statePath());
+    return cur;
+  }
 }
+
+export type SyncState = Record<string, Record<string, { v: unknown; at: number }>>;

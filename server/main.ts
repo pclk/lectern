@@ -66,6 +66,17 @@ const server = http.createServer((req, res) => {
   try {
     const url = new URL(req.url ?? "/", "http://x");
     const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+    if (parts[0] === "api" && parts[1] === "state" && parts.length === 2) {
+      if (req.method === "GET") return json(res, 200, store.state());
+      if (req.method !== "PUT") return json(res, 405, { error: "method not allowed" });
+      let body = "";
+      req.setEncoding("utf8");
+      req.on("data", (c: string) => { body += c; if (body.length > 4_000_000) req.destroy(); });
+      req.on("end", () => {
+        try { json(res, 200, store.mergeState(JSON.parse(body))); } catch (e) { json(res, 400, { error: String(e) }); }
+      });
+      return;
+    }
     if (req.method !== "GET" && req.method !== "HEAD") return json(res, 405, { error: "method not allowed" });
 
     if (parts[0] === "api") {

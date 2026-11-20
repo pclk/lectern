@@ -114,6 +114,7 @@ export const localPauses = {
     const all = read<Record<string, LocalPause[]>>("lectern.localPauses", {});
     if (local.length) all[key] = local; else delete all[key];
     write("lectern.localPauses", all);
+    window.dispatchEvent(new Event("lectern:localPauses"));
   },
 };
 

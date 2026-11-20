@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { Home, ModulePage } from "./Library.tsx";
 import { Player } from "./Player.tsx";
 import "./styles.css";
+import { startSync } from "./sync.ts";
 
 // Embedded (padSync's Lecture tab) is decided once: links inside Lectern don't carry ?embed=1, and a framed page
 // stays framed however it navigates.
@@ -55,4 +56,5 @@ function App() {
   return <Home />;
 }
 
+startSync();
 createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);
