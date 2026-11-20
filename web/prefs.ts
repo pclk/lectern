@@ -146,3 +146,19 @@ export function useRatings(): Record<string, Rating> {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   return useMemo(() => ratings.all(), [raw]);
 }
+
+function subscribeLocal(fn: () => void) {
+  window.addEventListener("lectern:localPauses", fn);
+  window.addEventListener("storage", fn);
+  return () => { window.removeEventListener("lectern:localPauses", fn); window.removeEventListener("storage", fn); };
+}
+function localSnapshot() {
+  try { return localStorage.getItem("lectern.localPauses") ?? ""; } catch { return ""; }
+}
+const NO_LOCAL: LocalPause[] = [];
+/** One recording's "tighten here" overrides, re-rendering when they change (here, in another tab, or by sync). */
+export function useLocalPauses(key: string): LocalPause[] {
+  const raw = useSyncExternalStore(subscribeLocal, localSnapshot, localSnapshot);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(() => { const l = localPauses.get(key); return l.length ? l : NO_LOCAL; }, [raw, key]);
+}

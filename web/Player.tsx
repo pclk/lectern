@@ -7,7 +7,7 @@ import { api, mediaUrl, useLoad, watchUrl } from "./api.ts";
 import { navigate } from "./main.tsx";
 import { fromHost, tellHost } from "./host.ts";
 import { Header } from "./Library.tsx";
-import { localPauses, RATING_LABEL, ratings, usePrefs, resume, useRatings, useResume, type Prefs, type Rating } from "./prefs.ts";
+import { localPauses, RATING_LABEL, ratings, useLocalPauses, usePrefs, resume, useRatings, useResume, type Prefs, type Rating } from "./prefs.ts";
 
 const CATEGORY_LABEL: Record<CutCategory, string> = {
   "dead-time": "Before/after lecture", break: "Breaks", admin: "Admin & logistics", technical: "Technical hiccups",
@@ -28,8 +28,8 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
   const [prefs, setPrefs] = usePrefs();
   const key = `${module}/${id}`;
   const [keepCuts, setKeepCuts] = useState<number[]>([]);
-  const [local, setLocalState] = useState<LocalPause[]>(() => localPauses.get(key));
-  const updateLocal = useCallback((l: LocalPause[]) => { setLocalState(l); localPauses.set(key, l); }, [key]);
+  const local = useLocalPauses(key); // re-reads when sync brings another device's overrides
+  const updateLocal = useCallback((l: LocalPause[]) => localPauses.set(key, l), [key]);
   const pauseSettings = useMemo<PauseSettings>(() => ({ max: prefs.pauseMax, local }), [prefs.pauseMax, local]);
   const pauses = useMemo(() => pauseRanges(src, pauseSettings), [src, pauseSettings]);
   const edit = useMemo(() => ({ ...prefs.edit, keepCuts }), [prefs.edit, keepCuts]);
@@ -48,7 +48,9 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
   const carry = useRef<{ t: number; play: boolean } | null>(null);
   const setQuality = (q: number | null) => {
     const v = video.current;
-    if (v && ready) carry.current = { t: v.currentTime, play: !v.paused };
+    const next = q != null && src.tiers?.includes(q) ? q : undefined;
+    // only when the file actually changes: otherwise no load follows and the carry would linger
+    if (v && ready && next !== quality) carry.current = { t: v.currentTime, play: !v.paused };
     setPrefs({ quality: q });
   };
   const box = useRef<HTMLDivElement>(null);
@@ -125,16 +127,18 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
       const ct = v.currentTime;
       if (!v.seeking && !v.paused) {
         const r = tl.skipAt(ct + 0.02);
+        // A linked example ends when playback reaches its end, or when a skip is about to jump over it (its end
+        // inside a cut, a pause, or the skip to the end of the video in examples-only mode). Handled before the
+        // skip, so the loop / rating prompt wins over "Up next".
+        const end = focus ? tl.snap(focus.end) : 0;
+        const exampleDone = focus != null && ((ct >= end && ct < end + 1.5 * Math.max(1, v.playbackRate)) ||
+          (r != null && ct < focus.end && r[1] >= focus.end));
+        if (exampleDone && loop) { v.currentTime = tl.snap(focus.start); return; }
+        if (exampleDone && stopAtEnd) { v.pause(); setToRate(focus); setFocus(null); return; }
         if (r) {
           if (r[1] >= tl.duration - 0.05) { v.pause(); v.currentTime = tl.duration; setEnded(true); }
           // landed short of where we sent it (Safari rounds to frames)? push past instead of seeking there forever
           else { v.currentTime = r[1] === target ? r[1] + 0.1 : r[1]; target = r[1]; }
-        }
-        // the end may fall inside a skip, so compare with where playback resumes after it
-        const end = focus ? tl.snap(focus.end) : 0;
-        if (focus && ct >= end && ct < end + 1.5 * Math.max(1, v.playbackRate)) {
-          if (loop) v.currentTime = tl.snap(focus.start);
-          else if (stopAtEnd) { v.pause(); setToRate(focus); setFocus(null); }
         }
         if (again != null && ct >= again) setAgain(null);
       }
@@ -189,17 +193,24 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
     if (!ready) return; // onLoaded reads the new props itself
     const e = src.examples.find((x) => x.id === example) ?? null;
     setFocus(e);
+    setToRate(null);
     const target = startAt ?? e?.start;
     if (target != null) { seek(target); tryPlay(); }
   }, [startAt, example, ready, src.examples, seek]);
 
-  // Remember the position; mark watched near the end.
+  // Remember the position; mark watched when playback crosses 95%. Only a real move is saved: an idle open tab
+  // re-saving the same spot would keep overwriting progress made on another device (sync).
   useEffect(() => {
     if (!ready) return;
     const v = video.current; // React clears the ref before this effect's cleanup runs
+    const past = () => !!v && tl.toVirtual(v.currentTime) > tl.virtualDuration * 0.95;
+    let saved = v?.currentTime ?? 0, wasPast = past();
     const save = () => {
-      if (!v || !v.currentTime) return;
-      resume.set(key, v.currentTime, tl.toVirtual(v.currentTime) > tl.virtualDuration * 0.95 ? true : undefined);
+      if (!v || !v.currentTime || Math.abs(v.currentTime - saved) < 1) return;
+      const now = past();
+      resume.set(key, v.currentTime, now && !wasPast ? true : undefined); // so unmarking near the end sticks
+      saved = v.currentTime;
+      wasPast = now;
     };
     const timer = window.setInterval(save, 5000);
     window.addEventListener("pagehide", save);
@@ -329,7 +340,7 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
       else if (k === "i") pip();
       else if (k === "x") void explain();
       else if (k === "r") {
-        if (!focus) { const ex = src.examples.find((x) => t >= x.start && t < x.end); if (ex) setFocus(ex); }
+        if (!focus) { const ex = src.examples.find((x) => t >= x.start && t < x.end); if (ex) { setFocus(ex); setToRate(null); } }
         setPrefs({ loopExample: !prefs.loopExample });
         flash(prefs.loopExample ? "Example loop off" : "Looping this example");
       }

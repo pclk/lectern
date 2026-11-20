@@ -80,7 +80,11 @@ const handler = (req: http.IncomingMessage, res: http.ServerResponse) => {
       if (req.method !== "PUT") return json(res, 405, { error: "method not allowed" });
       let body = "";
       req.setEncoding("utf8");
-      req.on("data", (c: string) => { body += c; if (body.length > 4_000_000) req.destroy(); });
+      let tooBig = false;
+      req.on("data", (c: string) => {
+        body += c;
+        if (body.length > 4_000_000 && !tooBig) { tooBig = true; json(res, 413, { error: "too large" }); req.destroy(); }
+      });
       req.on("end", () => {
         try { json(res, 200, store.mergeState(JSON.parse(body))); } catch (e) { json(res, 400, { error: String(e) }); }
       });

@@ -116,20 +116,30 @@ export class LibraryStore {
       { ...e, module: m.code, source: s.id, sourceTitle: s.title, sourceLabel: s.label })));
   }
 
-  /** Progress shared by every browser and device (web/sync.ts): {store: {key: {v, at}}}, newer `at` wins. */
+  /**
+   * Progress shared by every browser and device (web/sync.ts): {store: {key: {v, at}}}. A client only sends what it
+   * changed, so every entry it sends is accepted, stamped with the server's own increasing clock: the last change to
+   * arrive wins, whatever the devices' clocks say.
+   */
   private statePath() { return path.join(this.root, ".lectern-state.json"); }
 
   state(): SyncState {
     try { return JSON.parse(fs.readFileSync(this.statePath(), "utf8")) as SyncState; } catch { return {}; }
   }
 
+  private clock = 0;
+
   mergeState(patch: SyncState): SyncState {
     const cur = this.state();
+    const bad = (k: string) => k === "__proto__" || k === "constructor" || k === "prototype";
     for (const [store, entries] of Object.entries(patch)) {
-      if (!SAFE.test(store) || typeof entries !== "object" || !entries) continue;
-      const into = (cur[store] ??= {});
+      if (!SAFE.test(store) || bad(store) || typeof entries !== "object" || !entries) continue;
+      if (!Object.hasOwn(cur, store)) cur[store] = {};
+      const into = cur[store];
       for (const [k, e] of Object.entries(entries)) {
-        if (typeof e?.at === "number" && e.at > (into[k]?.at ?? 0)) into[k] = { v: e.v ?? null, at: e.at };
+        if (bad(k) || typeof e !== "object" || !e) continue;
+        this.clock = Math.max(Date.now(), this.clock + 1);
+        into[k] = { v: e.v ?? null, at: this.clock };
       }
     }
     const tmp = this.statePath() + ".tmp";
