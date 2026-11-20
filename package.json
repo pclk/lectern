@@ -1,0 +1,32 @@
+{
+  "name": "lectern",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local lecture player: plays your lecture recordings with skippable cuts and pauses, speed to a target wpm, karaoke subtitles, topic chapters, worked-example links and transcript search. Nothing is uploaded.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "node --watch-path=server --watch-path=shared server/main.ts --port 4748 & vite --port 4747 --strictPort",
+    "prebuild": "bash scripts/pack-skill.sh",
+    "skill:pack": "bash scripts/pack-skill.sh",
+    "build": "vite build",
+    "start": "node server/main.ts",
+    "start:lan": "node server/main.ts --lan",
+    "test": "node --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  }
+}
