@@ -23,11 +23,13 @@ export interface Prefs {
   autoNext: boolean;
   /** replay a worked example from its start when it ends, instead of pausing */
   loopExample: boolean;
+  /** preferred lower-quality copy (e.g. 540); null = full quality */
+  quality: number | null;
 }
 
 export const DEFAULT_PREFS: Prefs = {
   edit: DEFAULT_EDIT, rateMode: "auto", targetWpm: 250, manualRate: 1.5, subtitles: true, karaoke: true,
-  subtitleSize: 1, panel: "chapters", stopAtExampleEnd: true, volume: 1, pauseMax: null, autoNext: true, loopExample: false,
+  subtitleSize: 1, panel: "chapters", stopAtExampleEnd: true, volume: 1, pauseMax: null, autoNext: true, loopExample: false, quality: null,
 };
 
 function read<T>(key: string, def: T): T {

@@ -64,9 +64,9 @@ export class LibraryStore {
   }
 
   /** Path of a servable file inside a module folder (media/ or packs/), or null. */
-  file(module: string, kind: "media" | "packs", name: string): string | null {
+  file(module: string, kind: "media" | "packs", name: string, tier?: number): string | null {
     if (!SAFE.test(module) || !SAFE.test(name)) return null;
-    const p = path.join(this.root, module, kind, name);
+    const p = tier ? path.join(this.root, module, kind, `${tier}p`, name) : path.join(this.root, module, kind, name);
     if (!p.startsWith(this.root + path.sep)) return null;
     return fs.existsSync(p) && fs.statSync(p).isFile() ? p : null;
   }
@@ -96,6 +96,16 @@ export class LibraryStore {
       }
     }
     return hits;
+  }
+
+  /** Heights of the lower-quality copies made for a recording (make_proxies.py --tier), highest first. */
+  tiers(module: string, id: string): number[] {
+    if (!SAFE.test(module) || !SAFE.test(id)) return [];
+    const dir = path.join(this.root, module, "media");
+    try {
+      return fs.readdirSync(dir).filter((d) => /^\d{3,4}p$/.test(d) && fs.existsSync(path.join(dir, d, `${id}.mp4`)))
+        .map((d) => parseInt(d, 10)).sort((a, b) => b - a);
+    } catch { return []; }
   }
 
   /** Every worked example in a module, in watch order. */

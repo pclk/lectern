@@ -49,6 +49,8 @@ export interface SourceSummary {
 }
 
 export interface Source extends SourceSummary {
+  /** Heights of the lower-quality copies available (added by the server), highest first. */
+  tiers?: number[];
   words: Word[];
   cuts: Cut[];
   /** Removable portions of pauses (each already leaves a short natural pause around it). */

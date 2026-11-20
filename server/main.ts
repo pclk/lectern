@@ -72,7 +72,7 @@ const server = http.createServer((req, res) => {
       if (parts[1] === "library") return json(res, 200, store.library());
       if (parts[1] === "source" && parts.length === 4) {
         const src = store.source(parts[2], parts[3]);
-        return src ? json(res, 200, src) : json(res, 404, { error: "no such source" });
+        return src ? json(res, 200, { ...src, tiers: store.tiers(parts[2], parts[3]) }) : json(res, 404, { error: "no such source" });
       }
       if (parts[1] === "examples" && parts.length === 3) return json(res, 200, store.examples(parts[2]));
       if (parts[1] === "search") return json(res, 200, store.search(url.searchParams.get("q") ?? ""));
@@ -80,7 +80,9 @@ const server = http.createServer((req, res) => {
       return json(res, 404, { error: "unknown endpoint" });
     }
     if ((parts[0] === "media" || parts[0] === "packs") && parts.length === 3) {
-      const file = store.file(parts[1], parts[0], parts[2]);
+      // ?q=540 asks for a lower-quality copy; without one, the full proxy is served instead
+      const q = Number(url.searchParams.get("q"));
+      const file = (parts[0] === "media" && Number.isInteger(q) && q > 0 && store.file(parts[1], "media", parts[2], q)) || store.file(parts[1], parts[0], parts[2]);
       return file ? sendFile(req, res, file, "private, max-age=3600") : json(res, 404, { error: "not found" });
     }
     // built web app; any other path is a client route (/watch/..., /m/...)

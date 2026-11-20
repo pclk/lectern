@@ -142,6 +142,7 @@ mark { background: var(--hl); color: inherit; border-radius: 3px; }
 .controls button:hover { background: var(--accent-soft); }
 .controls button.on { background: var(--accent-soft); color: var(--ink); box-shadow: inset 0 0 0 1px var(--accent); }
 .controls .play { width: 38px; font-size: 16px; }
+.controls select.quality { padding: 4px 6px; font-size: 13px; font-weight: 600; border-radius: 7px; }
 .clock { font-variant-numeric: tabular-nums; font-size: 14px; margin: 0 6px; white-space: nowrap; }
 .chapter-now { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; max-width: 30ch; }
 .menu-wrap { position: relative; }

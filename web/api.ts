@@ -14,7 +14,9 @@ export const api = {
   search: (q: string) => get<SearchHit[]>(`/api/search?q=${encodeURIComponent(q)}`),
 };
 
-export const mediaUrl = (m: string, id: string) => `/media/${encodeURIComponent(m)}/${encodeURIComponent(id)}.mp4`;
+/** `q`: height of a lower-quality copy (the server falls back to the full proxy without one). */
+export const mediaUrl = (m: string, id: string, q?: number) =>
+  `/media/${encodeURIComponent(m)}/${encodeURIComponent(id)}.mp4${q ? `?q=${q}` : ""}`;
 
 export function watchUrl(m: string, id: string, t?: number, example?: string) {
   const q = new URLSearchParams();

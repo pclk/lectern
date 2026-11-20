@@ -41,6 +41,15 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
   const lines = useMemo(() => buildLines(src.words), [src.words]);
 
   const video = useRef<HTMLVideoElement>(null);
+  // Quality: the preferred copy if this recording has it, else full quality.
+  const quality = prefs.quality != null && src.tiers?.includes(prefs.quality) ? prefs.quality : undefined;
+  // Switching quality swaps the video's src: carry the position and play state over.
+  const carry = useRef<{ t: number; play: boolean } | null>(null);
+  const setQuality = (q: number | null) => {
+    const v = video.current;
+    if (v && ready) carry.current = { t: v.currentTime, play: !v.paused };
+    setPrefs({ quality: q });
+  };
   const box = useRef<HTMLDivElement>(null);
   const [t, setT] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -138,6 +147,13 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
 
   // Start position: ?t= / ?e= from a link, else where you left off.
   const onLoaded = () => {
+    if (carry.current) {
+      const { t: at, play } = carry.current;
+      carry.current = null;
+      seek(at);
+      if (play) void video.current?.play().catch(() => {});
+      return;
+    }
     const at = resume.get(key);
     // resume where you left off, unless that was the end (then it's a rewatch from the start)
     const finished = at && tl.toVirtual(at.t) > tl.virtualDuration * 0.95;
@@ -315,7 +331,7 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
       <div className="player-body">
         <section className="stage">
           <div className="video-box" ref={box} onDoubleClick={fullscreen}>
-            <video ref={video} src={mediaUrl(module, id)} preload="auto" playsInline onClick={toggle}
+            <video ref={video} src={mediaUrl(module, id, quality)} preload="auto" playsInline onClick={toggle}
               onLoadedMetadata={onLoaded} onPlay={() => { setPlaying(true); setEnded(false); }} onPause={() => setPlaying(false)}
               onEnded={() => setEnded(true)} onSeeking={(e) => { if (e.currentTarget.currentTime < src.duration - 0.5) setEnded(false); }} />
             {prefs.subtitles && <Subtitles lines={lines} t={t} karaoke={prefs.karaoke} size={prefs.subtitleSize} />}
@@ -345,6 +361,13 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
             <span className="chapter-now">{chapter?.title}</span>
             <span className="spacer" />
             <SpeedMenu prefs={prefs} rate={rate} setPrefs={setPrefs} />
+            {(src.tiers?.length || prefs.quality != null) ? <select className="quality" value={prefs.quality ?? ""} onChange={(e) => setQuality(e.target.value ? Number(e.target.value) : null)}
+              title={prefs.quality != null && quality == null ? `No ${prefs.quality}p copy of this recording yet: playing full quality` : "Video quality (lower = smaller download, e.g. on an iPad over Wi-Fi)"}>
+              <option value="">Full quality</option>
+              {[...new Set([...(src.tiers ?? []), ...(prefs.quality != null ? [prefs.quality] : [])])].sort((a, b) => b - a).map((h) => (
+                <option key={h} value={h}>{h}p{src.tiers?.includes(h) ? "" : " (not made yet)"}</option>
+              ))}
+            </select> : null}
             <button className={prefs.subtitles ? "on" : ""} onClick={() => setPrefs({ subtitles: !prefs.subtitles })} title="Subtitles (c)">CC</button>
             <button className={prefs.edit.skipCuts ? "on" : ""} onClick={() => setPrefs({ edit: { ...prefs.edit, skipCuts: !prefs.edit.skipCuts } })} title="Skip cuts: off-topic, admin, breaks (s)">✂ Cuts</button>
             <button className={prefs.edit.skipPauses ? "on" : ""} onClick={() => setPrefs({ edit: { ...prefs.edit, skipPauses: !prefs.edit.skipPauses } })} title="Skip pauses (p)">⏭ Pauses</button>
