@@ -3,7 +3,7 @@ import { fmt } from "../shared/edl.ts";
 import type { ExampleHit, Module, SearchHit, SourceSummary } from "../shared/types.ts";
 import { api, useLoad, watchUrl } from "./api.ts";
 import { Link } from "./main.tsx";
-import { resume, useResume } from "./prefs.ts";
+import { RATING_LABEL, resume, usePrefs, useRatings, useResume } from "./prefs.ts";
 
 const KIND_LABEL: Record<string, string> = {
   "problem-set": "Problem set", tutorial: "Tutorial", quiz: "Quiz", midterm: "Midterm", "past-paper": "Past paper",
@@ -91,6 +91,13 @@ function EmptyLibrary() {
 
 function ModuleCard({ m }: { m: Module }) {
   const r = useResume();
+  const [prefs] = usePrefs();
+  // condensedMinutes is at 250 wpm; scale to your speech target, minus what's been watched
+  const scale = prefs.rateMode === "auto" ? 250 / prefs.targetWpm : 1;
+  const left = m.sources.reduce((a, s) => {
+    const at = r[`${m.code}/${s.id}`];
+    return a + (at?.done ? 0 : s.condensedMinutes * (1 - Math.min(1, (at?.t ?? 0) / s.duration)));
+  }, 0) * scale;
   const total = m.sources.reduce((a, s) => a + s.condensedMinutes, 0);
   const done = m.sources.filter((s) => r[`${m.code}/${s.id}`]?.done).length;
   const next = m.sources.find((s) => !r[`${m.code}/${s.id}`]?.done);
@@ -101,7 +108,7 @@ function ModuleCard({ m }: { m: Module }) {
         <p>{m.title}</p>
       </Link>
       <div className="meter"><div style={{ width: `${(done / Math.max(1, m.sources.length)) * 100}%` }} /></div>
-      <p className="muted">{done}/{m.sources.length} recordings watched · {Math.round(total / 6) / 10} h condensed · {m.sources.reduce((a, s) => a + s.exampleCount, 0)} worked examples</p>
+      <p className="muted"><b>≈ {Math.floor(left / 60)} h {Math.round(left % 60)} min left</b>{prefs.rateMode === "auto" ? ` at ${prefs.targetWpm} wpm` : ""} · {done}/{m.sources.length} recordings watched · {Math.round(total / 6) / 10} h condensed · {m.sources.reduce((a, s) => a + s.exampleCount, 0)} worked examples</p>
       {next && <Link className="btn primary" href={continueHref(m.code, next)}>▶ {r[`${m.code}/${next.id}`] ? "Continue" : "Start"}: {next.title}</Link>}
     </article>
   );
@@ -190,12 +197,18 @@ function SourceList({ m }: { m: Module }) {
 function ExampleIndex({ hits }: { hits?: ExampleHit[] }) {
   const [q, setQ] = useState("");
   const [kind, setKind] = useState("");
+  const [rating, setRating] = useState("");
+  const rated = useRatings();
   const kinds = useMemo(() => [...new Set(hits?.map((h) => h.kind))].sort(), [hits]);
   const shown = useMemo(() => {
     const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
-    return (hits ?? []).filter((h) => (!kind || h.kind === kind) &&
+    const ok = (h: ExampleHit) => {
+      const r = rated[`${h.module}/${h.source}/${h.id}`];
+      return !rating || (rating === "todo" ? r === "redo" || r === "shaky" : rating === "none" ? !r : r === rating);
+    };
+    return (hits ?? []).filter((h) => (!kind || h.kind === kind) && ok(h) &&
       terms.every((t) => `${h.label} ${h.ref ?? ""} ${h.summary ?? ""} ${h.sourceLabel}`.toLowerCase().includes(t)));
-  }, [hits, q, kind]);
+  }, [hits, q, kind, rating, rated]);
   if (!hits) return <p className="muted">Loading…</p>;
   return (
     <section>
@@ -205,12 +218,23 @@ function ExampleIndex({ hits }: { hits?: ExampleHit[] }) {
           <option value="">All kinds</option>
           {kinds.map((k) => <option key={k} value={k}>{KIND_LABEL[k] ?? k}</option>)}
         </select>
+        <select value={rating} onChange={(e) => setRating(e.target.value)} title="How it went when you watched it">
+          <option value="">Any rating</option>
+          <option value="todo">Redo + Shaky</option>
+          <option value="none">Not rated yet</option>
+          <option value="redo">{RATING_LABEL.redo}</option>
+          <option value="shaky">{RATING_LABEL.shaky}</option>
+          <option value="got">{RATING_LABEL.got}</option>
+        </select>
       </div>
       <ul className="examples">
         {shown.map((h) => (
           <li key={`${h.source}/${h.id}`}>
             <Link href={watchUrl(h.module, h.source, h.start, h.id)}>
-              <span className="ref">{h.ref ?? KIND_LABEL[h.kind] ?? h.kind}</span>
+              <span className="row">
+                <span className="ref">{h.ref ?? KIND_LABEL[h.kind] ?? h.kind}</span>
+                {rated[`${h.module}/${h.source}/${h.id}`] && <span className={`badge r-${rated[`${h.module}/${h.source}/${h.id}`]}`}>{RATING_LABEL[rated[`${h.module}/${h.source}/${h.id}`]]}</span>}
+              </span>
               <span className="title">{h.label}</span>
               {h.summary && <span className="summary">{h.summary}</span>}
               <span className="meta">{h.sourceLabel} · {fmt(h.start)} · {Math.max(1, Math.round((h.end - h.start) / 60))} min</span>

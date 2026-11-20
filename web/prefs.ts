@@ -116,3 +116,32 @@ export const localPauses = {
     write("lectern.localPauses", all);
   },
 };
+
+export type Rating = "got" | "shaky" | "redo";
+export const RATING_LABEL: Record<Rating, string> = { got: "✓ Got it", shaky: "~ Shaky", redo: "✗ Redo" };
+const RATINGS_EVENT = "lectern:ratings";
+
+/** How each worked example went ("<module>/<source>/<exampleId>"), for triaging the last days of revision. */
+export const ratings = {
+  all: (): Record<string, Rating> => read<Record<string, Rating>>("lectern.ratings", {}),
+  set(key: string, r: Rating | null) {
+    const all = ratings.all();
+    if (r) all[key] = r; else delete all[key];
+    write("lectern.ratings", all);
+    window.dispatchEvent(new Event(RATINGS_EVENT));
+  },
+};
+
+function subscribeRatings(fn: () => void) {
+  window.addEventListener(RATINGS_EVENT, fn);
+  window.addEventListener("storage", fn);
+  return () => { window.removeEventListener(RATINGS_EVENT, fn); window.removeEventListener("storage", fn); };
+}
+function ratingsSnapshot() {
+  try { return localStorage.getItem("lectern.ratings") ?? ""; } catch { return ""; }
+}
+export function useRatings(): Record<string, Rating> {
+  const raw = useSyncExternalStore(subscribeRatings, ratingsSnapshot, ratingsSnapshot);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(() => ratings.all(), [raw]);
+}

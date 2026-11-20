@@ -49,3 +49,16 @@ test("buildLines breaks long runs and sentence ends", () => {
   assert.equal(lines[0].words.at(-1)![2], "here.");
   assert.ok(lines[0].end <= lines[1].start);
 });
+
+test("outside and examples-only mode keep just the worked examples", async () => {
+  const { outside } = await import("../shared/edl.ts");
+  assert.deepEqual(outside([[10, 20], [15, 30], [50, 60]], 100), [[0, 10], [30, 50], [60, 100]]);
+  assert.deepEqual(outside([], 5), [[0, 5]]);
+  const ex = (start: number, end: number) => ({ id: "x", label: "x", ref: null, kind: "k", start, end });
+  const src = { duration: 100, cuts: [cut(12, 14)], pauses: [] as [number, number][], examples: [ex(10, 20), ex(40, 50)] };
+  const s = { skipCuts: true, keepCategories: [], keepCuts: [], skipPauses: true, examplesOnly: true };
+  assert.deepEqual(skipRanges(src, s), [[0, 10], [12, 14], [20, 40], [50, 100]]);
+  assert.equal(new Timeline(skipRanges(src, s), 100).virtualDuration, 18);
+  // no examples indexed: nothing extra is skipped
+  assert.deepEqual(skipRanges({ ...src, examples: [] }, s), [[12, 14]]);
+});

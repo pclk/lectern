@@ -10,6 +10,8 @@ export interface EditSettings {
   /** Individual cuts (by index) the user switched back on. */
   keepCuts: number[];
   skipPauses: boolean;
+  /** Skip everything outside the worked examples (a last pass over exam-style problems). */
+  examplesOnly?: boolean;
 }
 
 export const DEFAULT_EDIT: EditSettings = { skipCuts: true, keepCategories: [], keepCuts: [], skipPauses: true };
@@ -31,10 +33,24 @@ export function activeCuts(cuts: Cut[], s: EditSettings): Cut[] {
 }
 
 /** `pauses` defaults to the pipeline's reviewed pauses; shared/pauses.ts derives others from a threshold. */
-export function skipRanges(src: Pick<Source, "cuts" | "pauses" | "duration">, s: EditSettings, pauses: Range[] = src.pauses): Range[] {
+export function skipRanges(src: Pick<Source, "cuts" | "pauses" | "duration"> & { examples?: Source["examples"] }, s: EditSettings,
+  pauses: Range[] = src.pauses): Range[] {
   const r: Range[] = activeCuts(src.cuts, s).map((c) => [c.start, c.end]);
+  if (s.examplesOnly && src.examples?.length) r.push(...outside(src.examples.map((e): Range => [e.start, e.end]), src.duration));
   if (s.skipPauses) r.push(...pauses.map(([a, b]): Range => [a, b]));
   return mergeRanges(r.map(([a, b]): Range => [Math.max(0, a), Math.min(src.duration, b)]));
+}
+
+/** The parts of [0, duration) not covered by `ranges`. */
+export function outside(ranges: Range[], duration: number): Range[] {
+  const out: Range[] = [];
+  let t = 0;
+  for (const [a, b] of mergeRanges(ranges, 0)) {
+    if (a > t) out.push([t, a]);
+    t = Math.max(t, b);
+  }
+  if (t < duration) out.push([t, duration]);
+  return out;
 }
 
 /** Index of the last range starting at or before t (-1 if none). */

@@ -6,7 +6,7 @@ import type { CutCategory, Example, Source, SourceSummary } from "../shared/type
 import { api, mediaUrl, useLoad, watchUrl } from "./api.ts";
 import { navigate } from "./main.tsx";
 import { Header } from "./Library.tsx";
-import { localPauses, usePrefs, resume, useResume, type Prefs } from "./prefs.ts";
+import { localPauses, RATING_LABEL, ratings, usePrefs, resume, useRatings, useResume, type Prefs, type Rating } from "./prefs.ts";
 
 const CATEGORY_LABEL: Record<CutCategory, string> = {
   "dead-time": "Before/after lecture", break: "Breaks", admin: "Admin & logistics", technical: "Technical hiccups",
@@ -57,6 +57,13 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
   const [toast, setToast] = useState("");
   const [focus, setFocus] = useState<Example | null>(() => src.examples.find((e) => e.id === example) ?? null);
   const [ended, setEnded] = useState(false);
+  // Safari (and a padSync iframe without a tap) refuses play() without a user gesture: say so instead of a silent ▶.
+  const [blocked, setBlocked] = useState(false);
+  const tryPlay = useCallback(() => {
+    void video.current?.play().then(() => setBlocked(false), (e: Error) => { if (e.name === "NotAllowedError") setBlocked(true); });
+  }, []);
+  // A linked example that just finished, waiting for a rating.
+  const [toRate, setToRate] = useState<Example | null>(null);
   const watched = !!useResume()[key]?.done;
 
   // Neighbours in watch order, for previous/next and "Up next".
@@ -118,7 +125,7 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
         const end = focus ? tl.snap(focus.end) : 0;
         if (focus && ct >= end && ct < end + 1.5 * Math.max(1, v.playbackRate)) {
           if (loop) v.currentTime = tl.snap(focus.start);
-          else if (stopAtEnd) { v.pause(); setFocus(null); }
+          else if (stopAtEnd) { v.pause(); setToRate(focus); setFocus(null); }
         }
         if (again != null && ct >= again) setAgain(null);
       }
@@ -141,9 +148,9 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
   const toggle = useCallback(() => {
     const v = video.current;
     if (!v) return;
-    if (v.paused) void v.play().catch(() => {}); else v.pause();
-  }, []);
-  const playExample = useCallback((e: Example) => { setFocus(e); seek(e.start); void video.current?.play().catch(() => {}); }, [seek]);
+    if (v.paused) tryPlay(); else v.pause();
+  }, [tryPlay]);
+  const playExample = useCallback((e: Example) => { setFocus(e); setToRate(null); seek(e.start); tryPlay(); }, [seek, tryPlay]);
 
   // Start position: ?t= / ?e= from a link, else where you left off.
   const onLoaded = () => {
@@ -151,7 +158,7 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
       const { t: at, play } = carry.current;
       carry.current = null;
       seek(at);
-      if (play) void video.current?.play().catch(() => {});
+      if (play) tryPlay();
       return;
     }
     const at = resume.get(key);
@@ -160,7 +167,7 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
     const start = startAt ?? focus?.start ?? (at && !finished ? at.t : 0);
     seek(start);
     setReady(true);
-    if (startAt != null || focus) void video.current?.play().catch(() => {});
+    if (startAt != null || focus) tryPlay();
   };
 
   // A later link into this same recording (another chip on the page, lectern:open) only changes ?t= / ?e=:
@@ -173,7 +180,7 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
     const e = src.examples.find((x) => x.id === example) ?? null;
     setFocus(e);
     const target = startAt ?? e?.start;
-    if (target != null) { seek(target); void video.current?.play().catch(() => {}); }
+    if (target != null) { seek(target); tryPlay(); }
   }, [startAt, example, ready, src.examples, seek]);
 
   // Remember the position; mark watched near the end.
@@ -236,8 +243,8 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
     const line = now - lines[i].start < 1 && i > 0 ? lines[i - 1] : lines[i];
     setAgain(line.words[line.words.length - 1][1]);
     seek(line.start);
-    void video.current?.play().catch(() => {});
-  }, [lines, seek]);
+    tryPlay();
+  }, [lines, seek, tryPlay]);
 
   // "Explain this moment" (x): a ready-to-paste prompt with what was said around now.
   const explain = useCallback(async () => {
@@ -261,6 +268,15 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
     const url = location.origin + watchUrl(module, id, video.current?.currentTime ?? t);
     try { await navigator.clipboard.writeText(url); flash("Link copied"); } catch { flash(url); }
   }, [module, id, t, flash]);
+
+  const pip = () => {
+    const v = video.current as (HTMLVideoElement & { webkitSetPresentationMode?: (m: string) => void }) | null;
+    if (!v) return;
+    if (document.pictureInPictureElement) void document.exitPictureInPicture();
+    else if (document.pictureInPictureEnabled) void v.requestPictureInPicture().catch(() => flash("Picture in picture isn't available here"));
+    else if (v.webkitSetPresentationMode) v.webkitSetPresentationMode("picture-in-picture");
+    else flash("Picture in picture isn't available here");
+  };
 
   const fullscreen = () => {
     if (document.fullscreenElement) void document.exitFullscreen();
@@ -294,6 +310,8 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
       else if (k === "e") { const nx = src.examples.find((x) => x.start > t + 1); if (nx) playExample(nx); }
       else if (k === "f" && !embed) fullscreen();
       else if (k === "a") sayAgain();
+      else if (k === "o" && src.examples.length) setPrefs({ edit: { ...prefs.edit, examplesOnly: !prefs.edit.examplesOnly } });
+      else if (k === "i") pip();
       else if (k === "x") void explain();
       else if (k === "r") {
         if (!focus) { const ex = src.examples.find((x) => t >= x.start && t < x.end); if (ex) setFocus(ex); }
@@ -335,7 +353,20 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
               onLoadedMetadata={onLoaded} onPlay={() => { setPlaying(true); setEnded(false); }} onPause={() => setPlaying(false)}
               onEnded={() => setEnded(true)} onSeeking={(e) => { if (e.currentTarget.currentTime < src.duration - 0.5) setEnded(false); }} />
             {prefs.subtitles && <Subtitles lines={lines} t={t} karaoke={prefs.karaoke} size={prefs.subtitleSize} />}
-            {!playing && ready && !ended && <button className="big-play" onClick={toggle} aria-label="Play">▶</button>}
+            {((!playing && ready && !ended) || blocked) && (
+              <button className={`big-play${blocked ? " wide" : ""}`} onClick={toggle} aria-label="Play">{blocked ? `▶ Tap to play · ${src.label} ${fmt(tl.toVirtual(t))}` : "▶"}</button>
+            )}
+            {toRate && !focus && (
+              <div className="example-banner">
+                <span>How did <b>{toRate.ref ?? "this example"}</b> go?</span>
+                <span className="row">
+                  {(Object.keys(RATING_LABEL) as Rating[]).map((r) => (
+                    <button key={r} onClick={() => { ratings.set(`${key}/${toRate.id}`, r); setToRate(null); flash(RATING_LABEL[r]); }}>{RATING_LABEL[r]}</button>
+                  ))}
+                  <button onClick={() => setToRate(null)} title="Don't rate">×</button>
+                </span>
+              </div>
+            )}
             {ended && <UpNext next={next} auto={prefs.autoNext} setAuto={(v) => setPrefs({ autoNext: v })} go={go} replay={() => { seek(0); void video.current?.play(); }} />}
             {focus && (
               <div className="example-banner">
@@ -374,10 +405,15 @@ function PlayerView({ module, id, embed, startAt, example, src }: Props & { src:
             <button className={local.some((l) => t >= l.start && t < l.end) ? "on" : ""}
               onClick={() => tightenHere()} title="Still too slow here? Trim pauses harder in this chapter (t; shift+t undoes)">⏩ Tighten</button>
             <button className={watched ? "on" : ""} onClick={() => resume.mark([key], !watched)} title={watched ? "Watched: click to mark unwatched" : "Mark as watched"}>{watched ? "✓ Watched" : "○ Watched"}</button>
+            {src.examples.length > 0 && (
+              <button className={prefs.edit.examplesOnly ? "on" : ""} onClick={() => setPrefs({ edit: { ...prefs.edit, examplesOnly: !prefs.edit.examplesOnly } })}
+                title="Examples only: skip everything except the worked examples (o)">🎯 Examples</button>
+            )}
             <button onClick={sayAgain} title="Say that again: replay this line at 1× (a)">↶ Again</button>
             <button onClick={() => void explain()} title="Copy a prompt asking Claude to explain this moment (x)">🤖</button>
             <button onClick={copyLink} title="Copy a link to this moment (for your notes)">🔗</button>
             <button onClick={() => setHelp(true)} title="Keyboard shortcuts (?)">?</button>
+            <button onClick={pip} title="Picture in picture: keep the lecture floating over other windows (i)">⧉</button>
             {!embed && <button onClick={fullscreen} title="Fullscreen (f)">⛶</button>}
           </div>
         </section>
@@ -395,6 +431,7 @@ const KEYS: [string, string][] = [
   ["n / b", "next / previous chapter"], ["e", "next worked example"], ["r", "loop the current example"],
   ["shift+N / shift+P", "next / previous recording"], ["c", "subtitles on/off"], ["s", "skip cuts on/off"],
   ["p", "skip pauses on/off"], ["t / shift+T", "trim pauses harder in this chapter / undo"],
+  ["o", "examples only: skip everything but the worked examples"], ["i", "picture in picture"],
   ["x", "copy an \"explain this moment\" prompt for Claude"], ["f", "fullscreen"], ["?", "this help"],
 ];
 
@@ -567,6 +604,8 @@ function chapterProgress(src: Source, tl: Timeline, i: number, t: number) {
 }
 
 function Examples({ src, tl, t, playExample, focus, prefs, setPrefs }: PanelProps) {
+  const rated = useRatings();
+  const base = `${src.module}/${src.id}`;
   if (!src.examples.length) return <p className="muted pad">{src.indexed ? "No worked examples in this recording." : "Worked examples for this recording haven't been indexed yet."}</p>;
   return (
     <>
@@ -586,6 +625,12 @@ function Examples({ src, tl, t, playExample, focus, prefs, setPrefs }: PanelProp
                   {e.summary && <span className="summary">{e.summary}</span>}
                 </span>
               </button>
+              <span className="rate">
+                {(Object.keys(RATING_LABEL) as Rating[]).map((r) => (
+                  <button key={r} className={`r-${r}${rated[`${base}/${e.id}`] === r ? " on" : ""}`}
+                    onClick={() => ratings.set(`${base}/${e.id}`, rated[`${base}/${e.id}`] === r ? null : r)}>{RATING_LABEL[r]}</button>
+                ))}
+              </span>
             </li>
           );
         })}
@@ -678,6 +723,12 @@ function Edits({ src, tl, prefs, setPrefs, keepCuts, setKeepCuts, seek, rate, pa
         <input type="checkbox" checked={prefs.edit.skipCuts} onChange={(e) => setPrefs({ edit: { ...prefs.edit, skipCuts: e.target.checked } })} />
         Skip cuts <span className="muted">({src.cuts.length} reviewed stretches)</span>
       </label>
+      {src.examples.length > 0 && (
+        <label className="row">
+          <input type="checkbox" checked={!!prefs.edit.examplesOnly} onChange={(e) => setPrefs({ edit: { ...prefs.edit, examplesOnly: e.target.checked } })} />
+          Examples only <span className="muted">(play just the {src.examples.length} worked examples)</span>
+        </label>
+      )}
       {prefs.edit.skipCuts && cats.length > 0 && (
         <div className="cats">
           {cats.map((c) => (
