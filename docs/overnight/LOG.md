@@ -34,3 +34,78 @@ Shipped (all on main, tests 12/12, typecheck + build clean, server restarted; ea
 **Background job** (started in run 2): `nice -n 19 python3 skill/lecture-exam-prep/scripts/make_proxies.py ~/Lectern/library --tier 540 -j 1 --threads 2` run from the vidwork dir. Progress: 36/83 at 05:16. Check: `pgrep -fl "tier 540"`, `tail ~/Lectern/tier540.log`, `ls ~/Lectern/library/*/media/540p | wc -l`. Safe to stop (`pkill -f "tier 540"`) and resume later; finished files are skipped and partial ones are written as `.tmp.mp4` first. New tiers show up without a restart (the source API checks the disk).
 
 For run 4: everything under "Run 4" in ROADMAP. New surface to review: sync.ts merge logic, the /api/state PUT (no auth; with --lan anyone on the Wi-Fi can write progress: low risk, note it), quality switching, the rating banner. The controls bar now wraps on narrow windows: consider a ⋯ menu.
+
+## Run 4: 05:35–05:45 (hardening) and the night's summary
+Run 4 commits:
+- `b4bcc8e` QA list:
+  - **skips:** re-seek loop guard; ranges merged before slivers are dropped; skips < 0.15 s apart joined; pause cuts < 0.15 s skipped;
+  - **errors:** missing-video message + Try again; error boundary;
+  - **playback:** reloading a page paused at its own `?t=` doesn't autoplay; iPhone fullscreen fallback, no double-click fullscreen in embed, `defaultPlaybackRate`;
+  - **input:** shortcuts work after ticking a checkbox; focused buttons blurred; seek bar `pointercancel` / lost capture;
+  - **embedding:** postMessage only from the host/opener, replies to its origin (`web/host.ts`);
+  - **speed:** memoised transcript search and kept-wpm.
+- `bba271a` fixes from an independent review of the whole night's diff (11 findings, all confirmed):
+  - **sync:**
+    - the server stamps changes in arrival order (device clocks never compared);
+    - pulls don't overwrite unpushed local changes;
+    - synced bookkeeping persisted and shared across tabs;
+    - keepalive push on hide/close;
+    - `__proto__` keys refused; 413 for huge PUTs.
+  - **player:**
+    - only real moves are saved (an idle tab no longer overwrites another device's progress);
+    - watched is set on crossing 95% (unmarking sticks);
+    - pause overrides follow sync;
+    - an example ending inside a skip still loops / prompts before Up next;
+    - stale rating prompt cleared;
+    - no pending quality carry.
+  - **tests:** `tests/state.test.ts`.
+- (this commit) README feature list and SKILL.md Phase 6 updated (tiers, https, the player's controls, shared progress); skill zip rebuilt.
+
+**Verification.** Same smoke script in Chromium (Chrome for Testing) and **WebKit 27.2** (installed tonight with `npx playwright-core install webkit`, so Safari's engine). Both pass with no page errors:
+- the 5 min break cut was skipped during real playback;
+- keys work after ticking a checkbox;
+- a reload stays paused;
+- 0.12 s pauses advance with no seek loop;
+- the missing-video message shows;
+- an iframe host gets `ready`/`state`, its `lectern:seek` works, and a message from elsewhere is ignored.
+
+Two-profile sync test:
+- Mac 108 s → iPad 255 s;
+- the idle Mac tab didn't overwrite it over two save cycles;
+- the Mac's copy followed on focus;
+- a rating carried across.
+
+Test state files were deleted afterwards. 17/17 unit tests, typecheck and build clean, server restarted on :4747 (http, `127.0.0.1`).
+
+### The night in one list
+Shipped (all on `main`):
+1. **Adjustable pause trimming**: global level + ⏩ Tighten / `t` per chapter, remembered per recording.
+2. **Next/previous recording** + Up next autoplay.
+3. **Quality tiers**: `make_proxies.py --tier`, `?q=`, a player menu with fallback. **All 83 recordings have 540p copies** (the background job finished).
+4. **Watched/unwatched/reset** per recording and module.
+
+Plus:
+- example tools: loop, examples-only mode, ratings with the "Redo + Shaky" filter;
+- playback: say-that-again at 1×, explain-this-moment prompt, `?` help, time left per module, PiP, tap-to-play;
+- **progress shared across devices** through the server;
+- **`--https`** for the iPad;
+- the hardening above.
+
+Open / known issues:
+- **Not checked by ear:** whether 0.12–0.2 s pause trimming sounds smooth. It now skips cuts under 0.15 s and joins near-adjacent ones, but each remaining pause is still a seek.
+- **Layout:** the controls bar wraps on narrow windows (⋯ menu in ROADMAP "Later").
+- **Network mode:** with `--lan`, anyone on the same Wi-Fi can read the library and write progress (no auth).
+- **WebKit noise:** WebKit logs cancelled `/api/state` fetches during navigation as errors (harmless, caught).
+- **iPad https:** needs the student to run the mkcert steps in the README. Nothing was installed or trusted on their behalf.
+- **Not done:** the one-click-handler / virtualised transcript.
+
+padSync needs (not changed tonight; details in ROADMAP "padSync changes to write up"):
+1. **LecternPanel readiness:** treat the iframe as ready only on `lectern:ready` (not `onLoad`). Reset that on an address change, queue a pending open, and fall back to remounting if no `lectern:state` arrives.
+2. **Message source check:** check `e.source === frame.contentWindow`. Lectern now also only accepts messages from its parent/opener, so padSync's existing `lectern:open` still works.
+3. **Open ↗:** use `window.open(url, "lectern")` and keep the handle, so later chips drive the same tab in Split View.
+4. **Optional:**
+   - handle `lectern:idle` (clear the footer);
+   - use `path` from `lectern:state` instead of rebuilding the URL;
+   - add footer play / ±10 s buttons.
+
+No change in padSync is *required*: the message fields it reads are unchanged.

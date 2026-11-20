@@ -36,17 +36,17 @@ within each run. `[x]` = shipped (commit in LOG.md). Effort: S < 20 min, M < 1 h
 - [x] Skips and the example auto-stop stop in background tabs (rAF is paused, audio isn't) → also check on `timeupdate` / a timer to the next skip. (QA 1, high)
 - [x] `history.replaceState` on every `t` change while paused/scrubbing → Safari SecurityError (~100 calls) → white screen. Debounce, try/catch. (QA 2, high)
 - [x] "Pause when the example ends" missed when the end falls inside a skip, or at 3× with a throttled frame → detect crossing `tl.snap(focus.end)`. (QA 6)
-- [ ] Possible re-seek loop at a skip boundary when the browser lands just before `r[1]` → seek to `r[1] + 0.05` / remember last target. (QA 7)
-- [ ] Very short skips cost a seek each (audible glitch), worse at tight pause levels (0.2 / 0.12 s) → merge before filtering, minimum skip ~0.15–0.25 s, test on WebKit. (QA 19)
-- [ ] Missing video = black box with no message → `onError` state; show the play button when the video can't play yet. (QA 9)
-- [ ] React error boundary + defaults for missing arrays on the client. (QA 10, client half)
-- [ ] Reloading a paused page autoplays (its own `?t=`) → autoplay only for `?e=` or an explicit play flag. (QA 14)
-- [ ] Re-render cost: memoise transcript search and `keptWpm`; one click handler on the transcript container. (QA 13)
-- [ ] Keyboard: don't ignore keys when a checkbox/radio has focus; blur buttons after click; effect deps. (QA 17)
-- [ ] Seek bar stuck dragging after `pointercancel` (iPad gestures). (QA 18)
-- [ ] Fullscreen: `webkitEnterFullscreen` fallback on iPhone; no `f`/double-click fullscreen in embed; set `defaultPlaybackRate` too. (QA 16)
-- [ ] postMessage: accept only from `window.parent`/`opener`, post to the parent's origin (`ancestorOrigins`/referrer) instead of `"*"`. (QA 20 / padSync 4)
-- [ ] Self-review of the night's diff, tests for new pure logic, README + SKILL.md, WebKit smoke test.
+- [x] Possible re-seek loop at a skip boundary when the browser lands just before `r[1]` → seek to `r[1] + 0.05` / remember last target. (QA 7)
+- [x] Very short skips cost a seek each (audible glitch), worse at tight pause levels (0.2 / 0.12 s) → merge before filtering, minimum skip ~0.15–0.25 s, test on WebKit. (QA 19)
+- [x] Missing video = black box with no message → `onError` state; show the play button when the video can't play yet. (QA 9)
+- [x] React error boundary + defaults for missing arrays on the client. (QA 10, client half)
+- [x] Reloading a paused page autoplays (its own `?t=`) → autoplay only for `?e=` or an explicit play flag. (QA 14)
+- [x] Re-render cost: memoise transcript search and `keptWpm` (done); one click handler on the transcript container (not done: see Later). (QA 13)
+- [x] Keyboard: don't ignore keys when a checkbox/radio has focus; blur buttons after click; effect deps. (QA 17)
+- [x] Seek bar stuck dragging after `pointercancel` (iPad gestures). (QA 18)
+- [x] Fullscreen: `webkitEnterFullscreen` fallback on iPhone; no `f`/double-click fullscreen in embed; set `defaultPlaybackRate` too. (QA 16)
+- [x] postMessage: accept only from `window.parent`/`opener`, post to the parent's origin (`ancestorOrigins`/referrer) instead of `"*"`. (QA 20 / padSync 4)
+- [x] Self-review of the night's diff, tests for new pure logic, README + SKILL.md, WebKit smoke test.
 
 ## padSync changes to write up (for the student; not done tonight)
 - LecternPanel: mark loaded only on `lectern:ready`; reset on address change; queue a pending open; fall back to remounting if no `lectern:state` within ~1.5 s. (padSync 2)
@@ -57,6 +57,9 @@ within each run. `[x]` = shipped (commit in LOG.md). Effort: S < 20 min, M < 1 h
 - Check `e.source === frame.contentWindow` on messages. (padSync 4)
 
 ## Later (not tonight)
+- Controls bar wraps on narrow windows: group secondary buttons (Again, 🤖, 🔗, ⧉, ?, quality) into a ⋯ menu.
+- One delegated click handler + virtualised list for very long transcripts.
+- Auth token for `/api/state` (and media) when serving with `--lan` on shared Wi-Fi.
 - Bookmarks with notes (`m`), a Marks tab, ticks on the seek bar. (student 10)
 - Spaced-repetition "due today" queue on top of ratings. (student 11)
 - Quiz-me mode (pause before the answer; needs an `answerAt` per example for precision). (student 7)

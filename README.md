@@ -3,11 +3,17 @@
 A local lecture player for exam revision. It plays your own lecture recordings from this Mac (nothing is uploaded) with:
 
 - **Live edits you can toggle**: skip reviewed cuts (admin, breaks, off-topic, non-examinable, per category or per cut) and pauses
-- **Speed**: Auto (each recording sped up so speech runs at a target wpm, 250 by default) or a fixed 0.75–3×
+- **Pause trimming you set**: keep at most 2 s … 0.12 s of each pause (default: the pipeline's reviewed pauses), and where the lecturer is still slow, **⏩ Tighten** (`t`) trims the current chapter harder (shift+`t` undoes), remembered per recording
+- **Speed**: Auto (fixed per recording so speech runs at a target wpm, 250 by default, so trimming pauses shortens the lecture) or a fixed 0.75–3×; **↶ Again** (`a`) replays the current line at 1×
 - **Karaoke subtitles** from the word timings, plus a searchable, click-to-seek transcript
 - **Topic chapters** and a **worked-example index**: every tutorial/problem-set/quiz question or slide example that was worked through, searchable per module ("Tutorial 3.6(b)", "L06 slide 17")
-- **Search across every lecture** of every module
-- Resume where you left off, `?t=` links to any moment, keyboard shortcuts (shown in the Edits tab)
+- **Worked examples**: loop one (`r`), play only the examples (`o`, 🎯), rate each ✓ Got it / ~ Shaky / ✗ Redo and filter the module's list to "Redo + Shaky"
+- **Next / previous recording** in watch order (shift+N / shift+P) with an "Up next" countdown (autoplay can be turned off)
+- **Watched / unwatched** and reset progress per recording or module; time left per module at your speed
+- **Quality**: full or a lower-quality copy (e.g. 540p, made by `make_proxies.py --tier 540`), remembered, falling back per recording
+- **Progress kept on the Mac** (`<library>/.lectern-state.json`): positions, watched marks, ratings and pause overrides are shared by every browser and device
+- **"Explain this moment"** (`x`, 🤖) copies a Claude prompt with the transcript around now; picture in picture (`i`); **search across every lecture**
+- Resume where you left off, `?t=` links to any moment; press `?` for every keyboard shortcut
 
 ## Run
 

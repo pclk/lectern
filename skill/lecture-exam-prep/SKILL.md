@@ -114,6 +114,7 @@ review makes the skips better but isn't required). Library default: `~/Lectern/l
 2. **Publish**:
    ```bash
    $PY SKILL/scripts/make_proxies.py ~/Lectern/library -j 4      # H.264 copies, 1 s keyframes (background; ~25x realtime)
+   nice -n 19 $PY SKILL/scripts/make_proxies.py ~/Lectern/library --tier 540 -j 1 --threads 2   # optional smaller copies (iPad/Wi-Fi), after the above
    $PY SKILL/scripts/export_lectern.py ~/Lectern/library         # sources/<id>.json + module.json
    ```
 3. **Annotation packs**: write `packs_spec.json` (format in `make_packs.py`'s docstring): one pack per slide deck
@@ -126,11 +127,16 @@ review makes the skips better but isn't required). Library default: `~/Lectern/l
    pack with 0 links where you expected some means refs didn't match the document's labels — fix the refs in
    `index/` rather than the matcher. Links point at `--base` (default `http://localhost:4747`).
 4. **Run**: in the Lectern repo `npm install && npm run build && npm start` → http://localhost:4747
-   (`npm run start:lan` for an iPad). Smoke-test `curl localhost:4747/api/health` and one `/watch/...` link.
+   (`npm run start:lan:https` for an iPad: padSync's https page can only embed Lectern over https; one-time mkcert
+   setup in the Lectern README, "iPad"). Tell the student about the player's own controls: pause trimming
+   (Edits tab, ⏩ Tighten / `t` where the lecturer is still slow), examples-only mode (`o`), ratings and the
+   "Redo + Shaky" filter, next/previous with Up next, the quality menu, and `?` for every shortcut. Progress is kept
+   in `<library>/.lectern-state.json`, shared by every device.
+   Smoke-test `curl localhost:4747/api/health` and one `/watch/...` link.
 5. **padSync**: import a pack as a PDF notebook; the side panel's **Lecture** tab (`LecternPanel`) lists the
    lecture links on the page being viewed and plays them in an embedded player beside the page; the address is
-   Settings → Notebook → Lectern address. On an iPad the https padSync page can't embed the Mac's http address
-   (mixed content): use the tab's "Open ↗" with Safari Split View instead.
+   Settings → Notebook → Lectern address. On an iPad, use the https address from `npm run start:lan:https`
+   (or the tab's "Open ↗" with Safari Split View if the certificate isn't set up).
 
 Report: library path, recordings/examples/links per module, any packs with few links, and how to start Lectern.
 
