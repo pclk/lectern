@@ -7,7 +7,7 @@ produce a spurious global offset (~-0.1 s) even when every segment is in sync.
 """
 import argparse, difflib, json, os, re, statistics, subprocess, sys, tempfile
 sys.path.insert(0, os.path.dirname(__file__))
-from common import cfg, ff
+from common import cfg, ff, mono
 
 _m = None
 norm = lambda w: re.sub(r"[^a-z0-9']", "", w.lower())
@@ -24,7 +24,7 @@ def model():
 def words_of(path, start=None, dur=None):
     with tempfile.NamedTemporaryFile(suffix=".wav", dir=".") as tmp:
         cmd = [ff(), "-v", "error", "-y"] + (["-ss", str(start), "-t", str(dur)] if start is not None else []) + \
-              ["-i", path, "-ac", "1", "-ar", "16000", tmp.name]
+              ["-i", path, *mono(path), "-ar", "16000", tmp.name]
         subprocess.run(cmd, check=True)
         r = model().transcribe(tmp.name, chunk_duration=120, overlap_duration=15)
     out = []

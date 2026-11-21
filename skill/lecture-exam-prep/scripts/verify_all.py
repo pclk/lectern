@@ -12,7 +12,7 @@ import argparse, glob, json, os, re, statistics, subprocess, sys
 import numpy as np
 from PIL import ImageFont
 sys.path.insert(0, os.path.dirname(__file__))
-from common import cfg, ff, ffprobe
+from common import cfg, ff, ffprobe, mono
 import verify
 
 C = cfg()
@@ -32,7 +32,7 @@ def font():
 
 
 def residual_pauses(path, words):
-    raw = subprocess.run([ff(), "-v", "error", "-i", path, "-vn", "-ac", "1", "-ar", "16000", "-f", "s16le", "-"],
+    raw = subprocess.run([ff(), "-v", "error", "-i", path, "-vn", *mono(path), "-ar", "16000", "-f", "s16le", "-"],
                          capture_output=True, check=True).stdout
     x = np.frombuffer(raw, np.int16).astype(np.float32) / 32768
     n = len(x) // 160

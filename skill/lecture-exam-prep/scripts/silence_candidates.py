@@ -17,7 +17,7 @@ from concurrent.futures import ProcessPoolExecutor
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 sys.path.insert(0, os.path.dirname(__file__))
-from common import cfg, ff
+from common import cfg, ff, mono
 
 C = cfg()
 SR, HOP, VFPS, TW, TH = 16000, 160, 4, 256, 128
@@ -31,7 +31,7 @@ def label_font():
 
 
 def energy(path):
-    raw = subprocess.run([ff(), "-v", "error", "-i", path, "-vn", "-ac", "1", "-ar", str(SR), "-f", "s16le", "-"],
+    raw = subprocess.run([ff(), "-v", "error", "-i", path, "-vn", *mono(path), "-ar", str(SR), "-f", "s16le", "-"],
                          capture_output=True, check=True).stdout
     x = np.frombuffer(raw, np.int16).astype(np.float32) / 32768
     n = len(x) // HOP

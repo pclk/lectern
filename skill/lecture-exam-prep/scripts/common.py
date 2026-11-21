@@ -58,6 +58,35 @@ def duration(path):
     return float(subprocess.check_output([ffprobe(), "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path]))
 
 
+_MONO = {}
+
+
+def inverted(path):
+    """True when a stereo source's right channel is its left channel with the polarity flipped (R ~ -L), as some
+    lecture-capture rooms record. Checked on three 20 s samples (20%, 50%, 80% in)."""
+    import numpy as np
+    out = subprocess.run([ffprobe(), "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=channels", "-of", "csv=p=0", path],
+                         capture_output=True, text=True).stdout.strip()
+    if out != "2": return False
+    d, xy = duration(path), []
+    for at in (0.2, 0.5, 0.8):
+        raw = subprocess.run([ff(), "-v", "error", "-ss", f"{d * at:.1f}", "-t", "20", "-i", path, "-vn", "-ac", "2", "-ar", "8000",
+                              "-f", "f32le", "-"], capture_output=True).stdout
+        xy.append(np.frombuffer(raw, np.float32).reshape(-1, 2))
+    x = np.concatenate(xy)
+    if not len(x): return False
+    l, r = x[:, 0].astype(np.float64), x[:, 1].astype(np.float64)
+    return (l * r).mean() / (np.sqrt((l * l).mean() * (r * r).mean()) or 1) < -0.5
+
+
+def mono(path, extra=None):
+    """ffmpeg output args for a mono downmix of `path` (plus an optional audio filter). A plain "-ac 1" of a source whose
+    channels are polarity-inverted cancels the voice to a thin residue ~27 dB down, so those are mixed as (L - R) / 2."""
+    if path not in _MONO: _MONO[path] = inverted(path)
+    f = (["pan=mono|c0=0.5*c0-0.5*c1"] if _MONO[path] else []) + ([extra] if extra else [])
+    return (["-af", ",".join(f)] if f else []) + ["-ac", "1"]
+
+
 def video_size(path):
     w, h = subprocess.check_output([ffprobe(), "-v", "error", "-select_streams", "v:0", "-show_entries",
                                     "stream=width,height", "-of", "csv=p=0", path]).decode().strip().split(",")[:2]

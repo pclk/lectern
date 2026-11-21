@@ -11,7 +11,7 @@ Also writes work/<part>.words.json (subtitle words on the output timeline) used 
 import bisect, json, os, re, subprocess, sys
 import numpy as np
 sys.path.insert(0, os.path.dirname(__file__))
-from common import cfg, ff, video_size
+from common import cfg, ff, mono, video_size
 
 C = cfg()
 FPS, SR = C["fps"], 48000
@@ -108,9 +108,8 @@ def build_ass(part, path):
 
 def build_audio(part, path):
     lo, hi = part["intervals"][0][0], part["intervals"][-1][1]
-    pre = ["-af", part["prefilter"]] if part.get("prefilter") else []
-    raw = subprocess.run([ff(), "-v", "error", "-ss", f"{lo}", "-t", f"{hi - lo + 1}", "-i", part["path"], "-vn", *pre,
-                          "-ac", "1", "-ar", str(SR), "-f", "s16le", "-"], capture_output=True, check=True).stdout
+    raw = subprocess.run([ff(), "-v", "error", "-ss", f"{lo}", "-t", f"{hi - lo + 1}", "-i", part["path"], "-vn",
+                          *mono(part["path"], part.get("prefilter")), "-ar", str(SR), "-f", "s16le", "-"], capture_output=True, check=True).stdout
     x = np.frombuffer(raw, np.int16).astype(np.float32)
     ramp = np.linspace(0, 1, FADE, dtype=np.float32)
     chunks = []

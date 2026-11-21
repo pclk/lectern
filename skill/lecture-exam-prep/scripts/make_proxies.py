@@ -16,7 +16,7 @@ something else needs the CPU: `nice -n 19 ... --tier 540 -j 1 --threads 2`.
 import argparse, json, os, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
 sys.path.insert(0, os.path.dirname(__file__))
-from common import ff
+from common import ff, mono
 
 ap = argparse.ArgumentParser(); ap.add_argument("library"); ap.add_argument("-j", type=int, default=4); ap.add_argument("--only", nargs="*")
 ap.add_argument("--tier", type=int, help="height of an extra lower-quality copy, e.g. 540")
@@ -51,7 +51,7 @@ def go(it):
                         "-vf", "fps=30,scale='min(1280,iw)':-2:flags=lanczos,format=yuv420p",
                         "-c:v", "libx264", "-preset", "veryfast", "-crf", "24", "-tune", "stillimage",
                         "-g", "30", "-keyint_min", "30", "-sc_threshold", "0", "-threads", str(a.threads),
-                        "-c:a", "aac", "-b:a", "96k", "-ac", "1", "-sn", "-dn", "-map_metadata", "-1", "-map_chapters", "-1",
+                        "-c:a", "aac", "-b:a", "96k", *mono(it["path"]), "-sn", "-dn", "-map_metadata", "-1", "-map_chapters", "-1",
                         "-movflags", "+faststart", out + ".tmp.mp4"], capture_output=True, text=True)
     if r.returncode: return f"{it['id']} FAIL {r.stderr[-400:]}"
     os.replace(out + ".tmp.mp4", out)

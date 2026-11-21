@@ -11,7 +11,7 @@ import argparse, json, os, subprocess, sys, time
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 sys.path.insert(0, os.path.dirname(__file__))
-from common import cfg, ff
+from common import cfg, ff, mono
 
 
 def hms(t): return f"{int(t // 3600)}:{int(t % 3600 // 60):02d}:{int(t % 60):02d}"
@@ -20,7 +20,7 @@ def hms(t): return f"{int(t // 3600)}:{int(t % 3600 // 60):02d}:{int(t % 60):02d
 def extract(it):
     wav = f"wav/{it['id']}.wav"
     if os.path.exists(f"transcripts/{it['id']}.json") or os.path.exists(wav): return
-    subprocess.run([ff(), "-v", "error", "-y", "-i", it["path"], "-vn", "-ac", "1", "-ar", "16000", "-f", "wav", wav + ".tmp"], check=True)
+    subprocess.run([ff(), "-v", "error", "-y", "-i", it["path"], "-vn", *mono(it["path"]), "-ar", "16000", "-f", "wav", wav + ".tmp"], check=True)
     os.rename(wav + ".tmp", wav)
 
 
