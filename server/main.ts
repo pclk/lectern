@@ -6,11 +6,13 @@
 //
 // --https serves over TLS so padSync (an https page) may embed it from an iPad: browsers block an http iframe in an
 // https page ("mixed content"), except for localhost on the same machine. Make a certificate the iPad trusts with
-// mkcert (see README): defaults are ~/Lectern/certs/lectern.pem and lectern-key.pem.
+// mkcert (see README): defaults are ~/Lectern/certs/lectern.pem and lectern-key.pem. Plain http on the same port
+// keeps working (the annotation pack's chips are http:// links), so switching modes never breaks a link.
 import fs from "node:fs";
 import { execFileSync } from "node:child_process";
 import http from "node:http";
 import https from "node:https";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { pipeline } from "node:stream";
@@ -127,7 +129,18 @@ if (HTTPS && !(fs.existsSync(CERT) && fs.existsSync(KEY))) {
   console.error(`--https needs a certificate: ${CERT} and ${KEY} not found (see README: "iPad").`);
   process.exit(1);
 }
-const server = HTTPS ? https.createServer({ cert: fs.readFileSync(CERT), key: fs.readFileSync(KEY) }, handler) : http.createServer(handler);
+const plain = http.createServer(handler);
+const tls = HTTPS ? https.createServer({ cert: fs.readFileSync(CERT), key: fs.readFileSync(KEY) }, handler) : null;
+// With --https, one port serves both: a TLS handshake starts with byte 0x16, anything else is plain http.
+const server = tls ? net.createServer((socket) => {
+  socket.on("error", () => socket.destroy());
+  socket.once("data", (first) => {
+    socket.pause();
+    socket.unshift(first);
+    (first[0] === 0x16 ? tls : plain).emit("connection", socket);
+    process.nextTick(() => socket.resume());
+  });
+}) : plain;
 
 /** The Mac's Bonjour name (what an iPad can resolve), else the host name. */
 function bonjourName() {

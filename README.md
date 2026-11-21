@@ -40,6 +40,11 @@ mkcert -cert-file lectern.pem -key-file lectern-key.pem "$(scutil --get LocalHos
 open "$(mkcert -CAROOT)"                                     # AirDrop rootCA.pem to the iPad
 ```
 
+(Already done on this Mac: `~/Lectern/certs` holds a certificate for the Mac's `.local` name, `localhost` and
+`127.0.0.1`; the CA is in `~/Library/Application Support/mkcert`. `mkcert -install` only matters if you want the
+Mac's own browser to trust https; on the Mac, plain `http://localhost:4747` keeps working because `--https` also
+answers plain http on the same port.)
+
 On the iPad, install the profile (Settings → General → VPN & Device Management), then turn on full trust for it
 (Settings → General → About → Certificate Trust Settings). Then start `npm run start:lan:https` and set padSync's
 Lectern address (Settings → Notebook) to the `https://<name>.local:4747` it prints. Alternative with no certificates
